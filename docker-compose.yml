@@ -71,65 +71,65 @@ services:
       timeout: 5s
       retries: 5
 
-  auth-identity-service:
-    build:
-      context: ./services/auth-identity-service
-      dockerfile: Dockerfile
-    container_name: auth-identity-service
-    restart: unless-stopped
-    ports:
-      - "6767:6767"
-    environment:
-      PORT: "6767"
-      DB_DSN: "host=auth-db user=${POSTGRES_USER:-postgres} password=${POSTGRES_PASSWORD:-postgres} dbname=auth_db port=5432 sslmode=disable"
-    depends_on:
-      auth-db:
-        condition: service_healthy
+  # auth-identity-service:
+  #   build:
+  #     context: ./services/auth-identity-service
+  #     dockerfile: Dockerfile
+  #   container_name: auth-identity-service
+  #   restart: unless-stopped
+  #   ports:
+  #     - "6767:6767"
+  #   environment:
+  #     PORT: "6767"
+  #     DB_DSN: "host=auth-db user=${POSTGRES_USER:-postgres} password=${POSTGRES_PASSWORD:-postgres} dbname=auth_db port=5432 sslmode=disable"
+  #   depends_on:
+  #     auth-db:
+  #       condition: service_healthy
 
-  inventory-service:
-    build:
-      context: ./services/inventory-service
-      dockerfile: Dockerfile
-    container_name: inventory-service
-    restart: unless-stopped
-    ports:
-      - "6768:6768"
-    environment:
-      PORT: "6768"
-      DB_DSN: "host=inventory-db user=${POSTGRES_USER:-postgres} password=${POSTGRES_PASSWORD:-postgres} dbname=inventory_db port=5432 sslmode=disable"
-    depends_on:
-      inventory-db:
-        condition: service_healthy
+  # inventory-service:
+  #   build:
+  #     context: ./services/inventory-service
+  #     dockerfile: Dockerfile
+  #   container_name: inventory-service
+  #   restart: unless-stopped
+  #   ports:
+  #     - "6768:6768"
+  #   environment:
+  #     PORT: "6768"
+  #     DB_DSN: "host=inventory-db user=${POSTGRES_USER:-postgres} password=${POSTGRES_PASSWORD:-postgres} dbname=inventory_db port=5432 sslmode=disable"
+  #   depends_on:
+  #     inventory-db:
+  #       condition: service_healthy
 
-  purchase-service:
-    build:
-      context: ./services/purchase-service
-      dockerfile: Dockerfile
-    container_name: purchase-service
-    restart: unless-stopped
-    ports:
-      - "6769:6769"
-    environment:
-      PORT: "6769"
-      DB_DSN: "host=purchase-db user=${POSTGRES_USER:-postgres} password=${POSTGRES_PASSWORD:-postgres} dbname=purchase_db port=5432 sslmode=disable"
-    depends_on:
-      purchase-db:
-        condition: service_healthy
+  # purchase-service:
+  #   build:
+  #     context: ./services/purchase-service
+  #     dockerfile: Dockerfile
+  #   container_name: purchase-service
+  #   restart: unless-stopped
+  #   ports:
+  #     - "6769:6769"
+  #   environment:
+  #     PORT: "6769"
+  #     DB_DSN: "host=purchase-db user=${POSTGRES_USER:-postgres} password=${POSTGRES_PASSWORD:-postgres} dbname=purchase_db port=5432 sslmode=disable"
+  #   depends_on:
+  #     purchase-db:
+  #       condition: service_healthy
 
-  approval-service:
-    build:
-      context: ./services/approval-service
-      dockerfile: Dockerfile
-    container_name: approval-service
-    restart: unless-stopped
-    ports:
-      - "6770:6770"
-    environment:
-      PORT: "6770"
-      DB_DSN: "host=approval-db user=${POSTGRES_USER:-postgres} password=${POSTGRES_PASSWORD:-postgres} dbname=approval_db port=5432 sslmode=disable"
-    depends_on:
-      approval-db:
-        condition: service_healthy
+  # approval-service:
+  #   build:
+  #     context: ./services/approval-service
+  #     dockerfile: Dockerfile
+  #   container_name: approval-service
+  #   restart: unless-stopped
+  #   ports:
+  #     - "6770:6770"
+  #   environment:
+  #     PORT: "6770"
+  #     DB_DSN: "host=approval-db user=${POSTGRES_USER:-postgres} password=${POSTGRES_PASSWORD:-postgres} dbname=approval_db port=5432 sslmode=disable"
+  #   depends_on:
+  #     approval-db:
+  #       condition: service_healthy
 
 volumes:
   auth_pgdata:
