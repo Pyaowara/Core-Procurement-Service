@@ -1,0 +1,16 @@
+@echo off
+echo Starting Core Procurement Service in separate terminals...
+
+echo Opening auth-identity-service terminal...
+start "auth-identity-service" cmd /k "cd /d %~dp0services\auth-identity-service && go run main.go"
+
+echo Opening inventory-service terminal...
+start "inventory-service" cmd /k "cd /d %~dp0services\inventory-service && go run main.go"
+
+echo Opening purchase-service terminal...
+start "purchase-service" cmd /k "cd /d %~dp0services\purchase-service && go run main.go"
+
+echo Opening approval-service terminal...
+start "approval-service" cmd /k "cd /d %~dp0services\approval-service && go run main.go"
+
+echo All services started!

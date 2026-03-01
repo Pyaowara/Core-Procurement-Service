@@ -5,6 +5,7 @@ import (
 
 	"github.com/core-procurement/auth-identity-service/config"
 	"github.com/core-procurement/auth-identity-service/models"
+	"github.com/core-procurement/auth-identity-service/utils"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -81,8 +82,17 @@ func Login(c *gin.Context) {
 		return
 	}
 
+	token, err := utils.GenerateToken(user.ID, user.Username, user.Role)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
+		return
+	}
+
+	c.SetCookie("token", token, 60*60*24, "/", "", false, true)
+
 	c.JSON(http.StatusOK, gin.H{
 		"message": "login successful",
+		"token":   token,
 		"user": gin.H{
 			"id":         user.ID,
 			"username":   user.Username,
@@ -91,5 +101,22 @@ func Login(c *gin.Context) {
 			"last_name":  user.LastName,
 			"email":      user.Email,
 		},
+	})
+}
+
+func Logout(c *gin.Context) {
+	c.SetCookie("token", "", -1, "/", "", false, true)
+	c.JSON(http.StatusOK, gin.H{"message": "logged out successfully"})
+}
+
+func Me(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	username, _ := c.Get("username")
+	role, _ := c.Get("role")
+
+	c.JSON(http.StatusOK, gin.H{
+		"user_id":  userID,
+		"username": username,
+		"role":     role,
 	})
 }

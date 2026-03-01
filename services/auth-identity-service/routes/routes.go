@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/core-procurement/auth-identity-service/handlers"
+	"github.com/core-procurement/auth-identity-service/middleware"
 	"github.com/gin-gonic/gin"
 )
 
@@ -21,9 +22,12 @@ func SetupRouter() *gin.Engine {
 	{
 		auth.POST("/register", handlers.Register)
 		auth.POST("/login", handlers.Login)
+		auth.POST("/logout", handlers.Logout)
+		auth.GET("/me", middleware.AuthRequired(), handlers.Me)
 	}
 
 	users := r.Group("/users")
+	users.Use(middleware.AuthRequired())
 	{
 		users.GET("", handlers.GetAllUsers)
 		users.GET("/:id", handlers.GetUser)
