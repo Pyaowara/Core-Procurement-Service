@@ -11,28 +11,42 @@ type ViewInventory struct {
 	ID          uint    `json:"id"`
 	Name        string  `json:"name"`
 	Description string  `json:"description"`
-	UnitPrice   float64 `json:"unit_price"`
+	UnitPrice   float64 `json:"unitprice"`
+}
+
+type inventoryInput struct {
+	Name        string  `json:"name"`
+	Description string  `json:"description"`
+	UnitPrice   float64 `json:"unitprice"`
+	Quantity    int     `json:"quantity"`
 }
 
 func CreateInventory(c *gin.Context) {
-	var input models.Inventory
+	var input inventoryInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	db := config.GetDB()
-	if err := db.Create(&input).Error; err != nil {
+	inventory := models.Inventory{
+		Name:        input.Name,
+		Description: input.Description,
+		UnitPrice:   input.UnitPrice,
+		Quantity:    input.Quantity,
+	}
+
+	db := config.DB
+	if err := db.Create(&inventory).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusCreated, input)
+	c.JSON(http.StatusCreated, gin.H{"inventory": inventory})
 }
 
 func GetInventories(c *gin.Context) {
 	var inventories []models.Inventory
-	db := config.GetDB()
+	db := config.DB
 	if err := db.Find(&inventories).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -43,7 +57,7 @@ func GetInventories(c *gin.Context) {
 func GetInventory(c *gin.Context) {
 	id := c.Param("id")
 	var inventory models.Inventory
-	db := config.GetDB()
+	db := config.DB
 	if err := db.First(&inventory, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Inventory not found"})
 		return
@@ -54,12 +68,12 @@ func GetInventory(c *gin.Context) {
 func UpdateInventory(c *gin.Context) {
 	id := c.Param("id")
 	var inventory models.Inventory
-	db := config.GetDB()
+	db := config.DB
 	if err := db.First(&inventory, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Inventory not found"})
 		return
 	}
-	var input models.Inventory
+	var input inventoryInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -71,7 +85,7 @@ func UpdateInventory(c *gin.Context) {
 func DeleteInventory(c *gin.Context) {
 	id := c.Param("id")
 	var inventory models.Inventory
-	db := config.GetDB()
+	db := config.DB
 	if err := db.First(&inventory, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Inventory not found"})
 		return
@@ -81,11 +95,22 @@ func DeleteInventory(c *gin.Context) {
 }
 
 func GetInventoryList(c *gin.Context) {
-	var inventories []ViewInventory
-	db := config.GetDB()
-	if err := db.Find(&inventories).Error; err != nil {
+	var inventories = []ViewInventory{}
+	var inventory []models.Inventory
+	db := config.DB
+	if err := db.Find(&inventory).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	if len(inventory) > 0 {
+		for _, inv := range inventory {
+			inventories = append(inventories, ViewInventory{
+				ID:          inv.ID,
+				Name:        inv.Name,
+				Description: inv.Description,
+				UnitPrice:   inv.UnitPrice,
+			})
+		}
 	}
 	c.JSON(http.StatusOK, inventories)
 }

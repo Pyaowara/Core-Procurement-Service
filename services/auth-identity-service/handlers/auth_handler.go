@@ -13,7 +13,6 @@ import (
 type RegisterInput struct {
 	Username  string `json:"username" binding:"required"`
 	Password  string `json:"password" binding:"required"`
-	Role      string `json:"role" binding:"required"`
 	FirstName string `json:"first_name" binding:"required"`
 	LastName  string `json:"last_name" binding:"required"`
 	Email     string `json:"email" binding:"required,email"`
@@ -40,7 +39,6 @@ func Register(c *gin.Context) {
 	user := models.User{
 		Username:  input.Username,
 		Password:  string(hashedPassword),
-		Role:      input.Role,
 		FirstName: input.FirstName,
 		LastName:  input.LastName,
 		Email:     input.Email,
@@ -56,7 +54,7 @@ func Register(c *gin.Context) {
 		"user": gin.H{
 			"id":         user.ID,
 			"username":   user.Username,
-			"role":       user.Role,
+			"role":       "Employee",
 			"first_name": user.FirstName,
 			"last_name":  user.LastName,
 			"email":      user.Email,
@@ -111,12 +109,27 @@ func Logout(c *gin.Context) {
 
 func Me(c *gin.Context) {
 	userID, _ := c.Get("user_id")
-	username, _ := c.Get("username")
-	role, _ := c.Get("role")
+
+	var user models.User
+	if err := config.DB.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+
+	token, err := utils.GenerateToken(user.ID, user.Username, user.Role)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
+		return
+	}
+
+	c.SetCookie("token", token, 60*60*24, "/", "", false, true)
 
 	c.JSON(http.StatusOK, gin.H{
-		"user_id":  userID,
-		"username": username,
-		"role":     role,
+		"user_id":    user.ID,
+		"username":   user.Username,
+		"role":       user.Role,
+		"first_name": user.FirstName,
+		"last_name":  user.LastName,
+		"email":      user.Email,
 	})
 }

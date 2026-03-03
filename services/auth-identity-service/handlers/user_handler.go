@@ -59,7 +59,6 @@ func UpdateUser(c *gin.Context) {
 	}
 
 	var input struct {
-		Role      string `json:"role"`
 		FirstName string `json:"first_name"`
 		LastName  string `json:"last_name"`
 		Email     string `json:"email"`
@@ -71,7 +70,6 @@ func UpdateUser(c *gin.Context) {
 	}
 
 	config.DB.Model(&user).Updates(models.User{
-		Role:      input.Role,
 		FirstName: input.FirstName,
 		LastName:  input.LastName,
 		Email:     input.Email,
@@ -102,4 +100,42 @@ func DeleteUser(c *gin.Context) {
 	config.DB.Delete(&user)
 
 	c.JSON(http.StatusOK, gin.H{"message": "user deleted successfully"})
+}
+
+func UpdateRole(c *gin.Context) {
+	id := c.Param("id")
+
+	var user models.User
+	if err := config.DB.First(&user, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+
+	var input struct {
+		Role string `json:"role"`
+	}
+
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if input.Role != "Admin" && input.Role != "PurchaseOfficer" && input.Role != "Employee" && input.Role != "Manager" && input.Role != "Executive" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid role"})
+		return
+	}
+	config.DB.Model(&user).Updates(models.User{
+		Role: input.Role,
+	})
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "user role updated successfully",
+		"user": gin.H{
+			"id":         user.ID,
+			"username":   user.Username,
+			"role":       user.Role,
+			"first_name": user.FirstName,
+			"last_name":  user.LastName,
+			"email":      user.Email,
+		},
+	})
 }

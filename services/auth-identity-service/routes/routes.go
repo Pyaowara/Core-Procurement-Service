@@ -29,10 +29,11 @@ func SetupRouter() *gin.Engine {
 	users := r.Group("/users")
 	users.Use(middleware.AuthRequired())
 	{
-		users.GET("", handlers.GetAllUsers)
-		users.GET("/:id", handlers.GetUser)
+		users.GET("", middleware.AdminRequired(), handlers.GetAllUsers)
+		users.GET("/:id", middleware.AdminRequired(), handlers.GetUser)
 		users.PUT("/:id", handlers.UpdateUser)
-		users.DELETE("/:id", handlers.DeleteUser)
+		users.DELETE("/:id", middleware.AdminRequired(), handlers.DeleteUser)
+		users.PATCH("/:id/role", middleware.AdminRequired(), handlers.UpdateRole)
 	}
 
 	return r
