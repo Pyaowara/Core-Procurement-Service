@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/core-procurement/auth-identity-service/models"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -22,5 +23,6 @@ func ConnectDatabase() {
 	}
 
 	log.Println("database connection established")
+	db.AutoMigrate(&models.User{})
 	DB = db
 }

@@ -3,6 +3,8 @@ package routes
 import (
 	"net/http"
 
+	"github.com/core-procurement/auth-identity-service/handlers"
+	"github.com/core-procurement/auth-identity-service/middleware"
 	"github.com/gin-gonic/gin"
 )
 
@@ -15,6 +17,23 @@ func SetupRouter() *gin.Engine {
 			"service": "auth-identity-service",
 		})
 	})
+
+	auth := r.Group("/auth")
+	{
+		auth.POST("/register", handlers.Register)
+		auth.POST("/login", handlers.Login)
+		auth.POST("/logout", handlers.Logout)
+		auth.GET("/me", middleware.AuthRequired(), handlers.Me)
+	}
+
+	users := r.Group("/users")
+	users.Use(middleware.AuthRequired())
+	{
+		users.GET("", handlers.GetAllUsers)
+		users.GET("/:id", handlers.GetUser)
+		users.PUT("/:id", handlers.UpdateUser)
+		users.DELETE("/:id", handlers.DeleteUser)
+	}
 
 	return r
 }
