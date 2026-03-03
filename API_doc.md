@@ -338,15 +338,15 @@ Returns inventory list (limited view — no quantity).
 [
   {
     "id": 1,
+    "sku": "PAP-A4-80G",
     "name": "A4 Paper",
-    "description": "80gsm white A4 paper, 500 sheets",
-    "unitprice": 150.0
+    "description": "80gsm white A4 paper, 500 sheets"
   },
   {
     "id": 2,
+    "sku": "PEN-BP-BLU",
     "name": "Ballpoint Pen",
-    "description": "Blue ink ballpoint pen",
-    "unitprice": 12.5
+    "description": "Blue ink ballpoint pen"
   }
 ]
 ```
@@ -365,9 +365,9 @@ Create a new inventory item.
 
 ```json
 {
+  "sku": "PAP-A4-80G",
   "name": "A4 Paper",
   "description": "80gsm white A4 paper, 500 sheets",
-  "unitprice": 150.0,
   "quantity": 100
 }
 ```
@@ -376,10 +376,16 @@ Create a new inventory item.
 
 ```json
 {
-  "name": "A4 Paper",
-  "description": "80gsm white A4 paper, 500 sheets",
-  "unitprice": 150.0,
-  "quantity": 100
+  "inventory": {
+    "ID": 1,
+    "CreatedAt": "2026-03-03T10:00:00Z",
+    "UpdatedAt": "2026-03-03T10:00:00Z",
+    "DeletedAt": null,
+    "Sku": "PAP-A4-80G",
+    "Name": "A4 Paper",
+    "Description": "80gsm white A4 paper, 500 sheets",
+    "Quantity": 100
+  }
 }
 ```
 
@@ -398,10 +404,10 @@ Get all inventory items (full details including quantity).
     "CreatedAt": "2026-03-03T10:00:00Z",
     "UpdatedAt": "2026-03-03T10:00:00Z",
     "DeletedAt": null,
+    "Sku": "PAP-A4-80G",
     "Name": "A4 Paper",
     "Description": "80gsm white A4 paper, 500 sheets",
-    "Quantity": 100,
-    "UnitPrice": 150.0
+    "Quantity": 100
   }
 ]
 ```
@@ -420,10 +426,10 @@ Get a specific inventory item.
   "CreatedAt": "2026-03-03T10:00:00Z",
   "UpdatedAt": "2026-03-03T10:00:00Z",
   "DeletedAt": null,
+  "Sku": "PAP-A4-80G",
   "Name": "A4 Paper",
   "Description": "80gsm white A4 paper, 500 sheets",
-  "Quantity": 100,
-  "UnitPrice": 150.0
+  "Quantity": 100
 }
 ```
 
@@ -445,9 +451,9 @@ Update an inventory item.
 
 ```json
 {
+  "sku": "PAP-A4-70G",
   "name": "A4 Paper (Updated)",
   "description": "70gsm white A4 paper, 500 sheets",
-  "unitprice": 120.0,
   "quantity": 200
 }
 ```
@@ -460,10 +466,10 @@ Update an inventory item.
   "CreatedAt": "2026-03-03T10:00:00Z",
   "UpdatedAt": "2026-03-03T12:00:00Z",
   "DeletedAt": null,
+  "Sku": "PAP-A4-70G",
   "Name": "A4 Paper (Updated)",
   "Description": "70gsm white A4 paper, 500 sheets",
-  "Quantity": 200,
-  "UnitPrice": 120.0
+  "Quantity": 200
 }
 ```
 

@@ -4,8 +4,8 @@ import "gorm.io/gorm"
 
 type Inventory struct {
 	gorm.Model
-	Name string `gorm:"unique;not null"`
+	Sku string `gorm:"unique;not null"`
+	Name string `gorm:"not null"`
 	Description string `gorm:"not null"`
 	Quantity int `gorm:"not null"`
-	UnitPrice float64 `gorm:"not null"`
 }

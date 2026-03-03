@@ -9,15 +9,15 @@ import (
 
 type ViewInventory struct {
 	ID          uint    `json:"id"`
+	Sku         string  `json:"sku"`
 	Name        string  `json:"name"`
 	Description string  `json:"description"`
-	UnitPrice   float64 `json:"unitprice"`
 }
 
 type inventoryInput struct {
+	Sku         string  `json:"sku"`
 	Name        string  `json:"name"`
 	Description string  `json:"description"`
-	UnitPrice   float64 `json:"unitprice"`
 	Quantity    int     `json:"quantity"`
 }
 
@@ -29,9 +29,9 @@ func CreateInventory(c *gin.Context) {
 	}
 
 	inventory := models.Inventory{
+		Sku:         input.Sku,
 		Name:        input.Name,
 		Description: input.Description,
-		UnitPrice:   input.UnitPrice,
 		Quantity:    input.Quantity,
 	}
 
@@ -106,9 +106,9 @@ func GetInventoryList(c *gin.Context) {
 		for _, inv := range inventory {
 			inventories = append(inventories, ViewInventory{
 				ID:          inv.ID,
+				Sku:         inv.Sku,
 				Name:        inv.Name,
 				Description: inv.Description,
-				UnitPrice:   inv.UnitPrice,
 			})
 		}
 	}
