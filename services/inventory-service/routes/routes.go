@@ -16,5 +16,18 @@ func SetupRouter() *gin.Engine {
 		})
 	})
 
+	dep := r.Group("/dep"){
+		dep.GET("/inventory/create", middleware.DepRequired(), handlers.CreateInventory)
+		dep.GET("/inventory", middleware.DepRequired(), handlers.GetInventories)
+		dep.GET("/inventory/:id", middleware.DepRequired(), handlers.GetInventory)
+		dep.PUT("/inventory/:id", middleware.DepRequired(), handlers.UpdateInventory)
+		dep.DELETE("/inventory/:id", middleware.DepRequired(), handlers.DeleteInventory)
+	}
+
+	inventory := r.Group("/inventory")
+	{
+		inventory.GET("", middleware.AuthRequired(), handlers.GetInventoryList)
+	}
+
 	return r
 }

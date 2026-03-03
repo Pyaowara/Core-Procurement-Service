@@ -68,3 +68,16 @@ func AuthRequired() gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+func DepRequired() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		await AuthRequired()(c)
+		role, exists := c.Get("role")
+		if !exists || role != "PurchasedDEP" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
