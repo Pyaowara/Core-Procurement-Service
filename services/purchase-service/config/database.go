@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/core-procurement/purchase-service/models"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -22,5 +23,18 @@ func ConnectDatabase() {
 	}
 
 	log.Println("database connection established")
+
+	// AutoMigrate all models
+	db.AutoMigrate(
+		&models.PurchaseRequest{},
+		&models.PRItem{},
+		&models.InventorySnapshot{},
+		&models.PurchaseOrder{},
+		&models.POItem{},
+		&models.GoodsReceived{},
+		&models.Vendor{},
+		&models.VendorSnapshot{},
+	)
+
 	DB = db
 }
