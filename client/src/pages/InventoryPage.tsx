@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type InventoryItem } from "@/lib/api";
+import { userApi, type InventoryItem } from "@/lib/api/index";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,7 +30,7 @@ export default function InventoryPage() {
     const [error, setError] = useState("");
 
     const load = async () => {
-        const data = await api.getInventory();
+        const data = await userApi.getInventory();
         setItems(data || []);
     };
 
@@ -56,9 +56,9 @@ export default function InventoryPage() {
         setError("");
         try {
             if (editId) {
-                await api.updateInventory(editId, form);
+                await userApi.updateInventory(editId, form);
             } else {
-                await api.createInventory(form);
+                await userApi.createInventory(form);
             }
             setOpen(false);
             load();
@@ -69,7 +69,7 @@ export default function InventoryPage() {
 
     const handleDelete = async (id: number) => {
         if (!confirm("Delete this item?")) return;
-        await api.deleteInventory(id);
+        await userApi.deleteInventory(id);
         load();
     };
 

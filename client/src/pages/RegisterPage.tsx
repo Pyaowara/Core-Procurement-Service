@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { api } from "@/lib/api";
+import { authApi } from "@/lib/api/index";
 import {
     Card,
     CardContent,
-    CardDescription,
+    CardDescription,    
     CardHeader,
     CardTitle,
 } from "@/components/ui/card";
@@ -32,7 +32,7 @@ export default function RegisterPage() {
         setError("");
         setLoading(true);
         try {
-            await api.register(form);
+            await authApi.register(form);
             navigate("/login");
         } catch (err: unknown) {
             setError(err instanceof Error ? err.message : "Registration failed");

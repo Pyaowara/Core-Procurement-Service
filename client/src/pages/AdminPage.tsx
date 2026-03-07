@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type User } from "@/lib/api";
+import { userApi, type User } from "@/lib/api/index";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,7 +25,7 @@ export default function AdminPage() {
     const [users, setUsers] = useState<User[]>([]);
 
     const load = async () => {
-        const data = await api.getUsers();
+        const data = await userApi.getUsers();
         setUsers(data || []);
     };
 
@@ -34,13 +34,13 @@ export default function AdminPage() {
     }, []);
 
     const handleRoleChange = async (userId: number, role: string) => {
-        await api.updateUserRole(userId, role);
+        await userApi.updateUserRole(userId, role);
         load();
     };
 
     const handleDelete = async (id: number) => {
         if (!confirm("Delete this user?")) return;
-        await api.deleteUser(id);
+        await userApi.deleteUser(id);
         load();
     };
 

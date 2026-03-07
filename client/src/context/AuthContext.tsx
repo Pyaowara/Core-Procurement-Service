@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { api } from "@/lib/api";
+import { authApi } from "@/lib/api/index";
 
 interface AuthUser {
     id: number;
@@ -25,7 +25,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const refresh = async () => {
         try {
-            const me = await api.me();
+            const me = await authApi.me();
             setUser(me as AuthUser);
         } catch {
             setUser(null);
@@ -39,14 +39,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, []);
 
     const login = async (data: { username: string; password: string }) => {
-        await api.login(data);
-        const me = await api.me();
+        await authApi.login(data);
+        const me = await authApi.me();
         setUser(me);
         return me;
     };
 
     const logout = async () => {
-        await api.logout();
+        await authApi.logout();
         setUser(null);
     };
 

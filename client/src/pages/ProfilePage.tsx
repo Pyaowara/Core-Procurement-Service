@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type User } from "@/lib/api";
+import { authApi, userApi, type User } from "@/lib/api/index";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,6 @@ import {
     CardContent,
     CardDescription,
     CardHeader,
-    CardTitle,
 } from "@/components/ui/card";
 
 
@@ -25,7 +24,7 @@ export default function ProfilePage() {
 
     useEffect(() => {
         if (!user) return;
-        api.me().then((data) => {
+        authApi.me().then((data) => {
             setFullUser(data);
             setForm({ first_name: data.first_name, last_name: data.last_name, email: data.email });
             setLoading(false);
@@ -39,7 +38,7 @@ export default function ProfilePage() {
         setMessage("");
         setSaving(true);
         try {
-            await api.updateUser(user.id, form);
+            await userApi.updateUser(user.id, form);
             setMessage("Profile updated successfully");
             refresh();
         } catch (err: unknown) {

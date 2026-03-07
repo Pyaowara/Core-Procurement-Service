@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type PublicInventoryItem } from "@/lib/api";
+import { userApi, type PublicInventoryItem } from "@/lib/api/index";
 import {
     Table,
     TableBody,
@@ -13,7 +13,7 @@ export default function CatalogPage() {
     const [items, setItems] = useState<PublicInventoryItem[]>([]);
 
     useEffect(() => {
-        api.getPublicInventory().then((data) => setItems(data || []));
+        userApi.getPublicInventory().then((data) => setItems(data || []));
     }, []);
 
     return (
