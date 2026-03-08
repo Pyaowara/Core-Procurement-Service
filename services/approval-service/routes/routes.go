@@ -19,20 +19,15 @@ func SetupRouter() *gin.Engine {
 		})
 	})
 
-	// Approval endpoints
-	approvals := r.Group("/approvals")
-	approvals.Use(middleware.AuthRequired())
-	{
-		approvals.POST("", handlers.CreateApproval)
-		approvals.GET("/:entity_type/:entity_id", handlers.GetApproval)
-		approvals.POST("/:id/approve", handlers.ApproveStep)
-		approvals.POST("/:id/reject", handlers.RejectStep)
+	// Approval endpoints - at root level, no /approvals prefix
+	r.GET("/:entity_type/:entity_id", middleware.AuthRequired(), handlers.GetApproval)
+	r.POST("/:id/approve", middleware.AuthRequired(), handlers.ApproveStep)
+	r.POST("/:id/reject", middleware.AuthRequired(), handlers.RejectStep)
 
-		// Workflow ID based endpoints (decoupled from approval ID)
-		approvals.GET("/workflow/:workflow_id", handlers.GetApprovalByWorkflow)
-		approvals.POST("/workflow/:workflow_id/approve", handlers.ApproveStepByWorkflow)
-		approvals.POST("/workflow/:workflow_id/reject", handlers.RejectStepByWorkflow)
-	}
+	// Workflow ID based endpoints
+	r.GET("/workflows/:workflow_id", middleware.AuthRequired(), handlers.GetApprovalByWorkflow)
+	r.POST("/workflows/:workflow_id/approve", middleware.AuthRequired(), handlers.ApproveStepByWorkflow)
+	r.POST("/workflows/:workflow_id/reject", middleware.AuthRequired(), handlers.RejectStepByWorkflow)
 
 	return r
 }

@@ -13,4 +13,7 @@ start "purchase-service" cmd /k "cd /d %~dp0services\purchase-service && go run 
 echo Opening approval-service terminal...
 start "approval-service" cmd /k "cd /d %~dp0services\approval-service && go run main.go"
 
+echo Opening api-gateway terminal...
+start "api-gateway" cmd /k "cd /d %~dp0services\api-gateway && go run main.go"
+
 echo All services started!

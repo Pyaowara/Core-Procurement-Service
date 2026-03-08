@@ -12,7 +12,7 @@ services:
     volumes:
       - auth_pgdata:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -30,7 +30,7 @@ services:
     volumes:
       - inventory_pgdata:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -48,7 +48,7 @@ services:
     volumes:
       - purchase_pgdata:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -66,74 +66,95 @@ services:
     volumes:
       - approval_pgdata:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 5s
       timeout: 5s
       retries: 5
 
-  # auth-identity-service:
-  #   build:
-  #     context: ./services/auth-identity-service
-  #     dockerfile: Dockerfile
-  #   container_name: auth-identity-service
-  #   restart: unless-stopped
-  #   ports:
-  #     - "6767:6767"
-  #   environment:
-  #     PORT: "6767"
-  #     DB_DSN: "host=auth-db user=${POSTGRES_USER:-postgres} password=${POSTGRES_PASSWORD:-postgres} dbname=auth_db port=5432 sslmode=disable"
-  #     JWT_SECRET: "${JWT_SECRET:-super-secret-jwt-key-change-me}"
-  #   depends_on:
-  #     auth-db:
-  #       condition: service_healthy
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      AUTH_SERVICE_URL: "http://auth-identity-service:6767"
+      INVENTORY_SERVICE_URL: "http://inventory-service:6768"
+      PURCHASE_SERVICE_URL: "http://purchase-service:6769"
+      APPROVAL_SERVICE_URL: "http://approval-service:6770"
+    depends_on:
+      - auth-identity-service
+      - inventory-service
+      - purchase-service
+      - approval-service
+  auth-identity-service:
+    build:
+      context: ./services/auth-identity-service
+      dockerfile: Dockerfile
+    container_name: auth-identity-service
+    restart: unless-stopped
+    ports:
+      - "6767:6767"
+    environment:
+      PORT: "6767"
+      DB_DSN: "host=auth-db user=${POSTGRES_USER:-postgres} password=${POSTGRES_PASSWORD:-postgres} dbname=auth_db port=5432 sslmode=disable"
+      JWT_SECRET: "${JWT_SECRET:-super-secret-jwt-key-change-me}"
+    depends_on:
+      auth-db:
+        condition: service_healthy
 
-  # inventory-service:
-  #   build:
-  #     context: ./services/inventory-service
-  #     dockerfile: Dockerfile
-  #   container_name: inventory-service
-  #   restart: unless-stopped
-  #   ports:
-  #     - "6768:6768"
-  #   environment:
-  #     PORT: "6768"
-  #     DB_DSN: "host=inventory-db user=${POSTGRES_USER:-postgres} password=${POSTGRES_PASSWORD:-postgres} dbname=inventory_db port=5432 sslmode=disable"
-  #     JWT_SECRET: "${JWT_SECRET:-super-secret-jwt-key-change-me}"
-  #   depends_on:
-  #     inventory-db:
-  #       condition: service_healthy
+  inventory-service:
+    build:
+      context: ./services/inventory-service
+      dockerfile: Dockerfile
+    container_name: inventory-service
+    restart: unless-stopped
+    ports:
+      - "6768:6768"
+    environment:
+      PORT: "6768"
+      DB_DSN: "host=inventory-db user=${POSTGRES_USER:-postgres} password=${POSTGRES_PASSWORD:-postgres} dbname=inventory_db port=5432 sslmode=disable"
+      JWT_SECRET: "${JWT_SECRET:-super-secret-jwt-key-change-me}"
+    depends_on:
+      inventory-db:
+        condition: service_healthy
 
-  # purchase-service:
-  #   build:
-  #     context: ./services/purchase-service
-  #     dockerfile: Dockerfile
-  #   container_name: purchase-service
-  #   restart: unless-stopped
-  #   ports:
-  #     - "6769:6769"
-  #   environment:
-  #     PORT: "6769"
-  #     DB_DSN: "host=purchase-db user=${POSTGRES_USER:-postgres} password=${POSTGRES_PASSWORD:-postgres} dbname=purchase_db port=5432 sslmode=disable"
-  #     JWT_SECRET: "${JWT_SECRET:-super-secret-jwt-key-change-me}"
-  #   depends_on:
-  #     purchase-db:
-  #       condition: service_healthy
+  purchase-service:
+    build:
+      context: ./services/purchase-service
+      dockerfile: Dockerfile
+    container_name: purchase-service
+    restart: unless-stopped
+    ports:
+      - "6769:6769"
+    environment:
+      PORT: "6769"
+      DB_DSN: "host=purchase-db user=${POSTGRES_USER:-postgres} password=${POSTGRES_PASSWORD:-postgres} dbname=purchase_db port=5432 sslmode=disable"
+      JWT_SECRET: "${JWT_SECRET:-super-secret-jwt-key-change-me}"
+      RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"
+    depends_on:
+      purchase-db:
+        condition: service_healthy
 
-  # approval-service:
-  #   build:
-  #     context: ./services/approval-service
-  #     dockerfile: Dockerfile
-  #   container_name: approval-service
-  #   restart: unless-stopped
-  #   ports:
-  #     - "6770:6770"
-  #   environment:
-  #     PORT: "6770"
-  #     DB_DSN: "host=approval-db user=${POSTGRES_USER:-postgres} password=${POSTGRES_PASSWORD:-postgres} dbname=approval_db port=5432 sslmode=disable"
-  #     JWT_SECRET: "${JWT_SECRET:-super-secret-jwt-key-change-me}"
-  #   depends_on:
-  #     approval-db:
-  #       condition: service_healthy
+  approval-service:
+    build:
+      context: ./services/approval-service
+      dockerfile: Dockerfile
+    container_name: approval-service
+    restart: unless-stopped
+    ports:
+      - "6770:6770"
+    environment:
+      PORT: "6770"
+      DB_DSN: "host=approval-db user=${POSTGRES_USER:-postgres} password=${POSTGRES_PASSWORD:-postgres} dbname=approval_db port=5432 sslmode=disable"
+      JWT_SECRET: "${JWT_SECRET:-super-secret-jwt-key-change-me}"
+      RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"
+    depends_on:
+      approval-db:
+        condition: service_healthy
 
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
@@ -159,4 +180,5 @@ volumes:
   purchase_pgdata:
   approval_pgdata:
   rabbitmq_data:
+
 
