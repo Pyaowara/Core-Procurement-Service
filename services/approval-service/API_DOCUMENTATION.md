@@ -28,9 +28,9 @@ http://localhost:6770
 The service uses this fixed sequence:
 
 ```text
-1. PR_CREATOR
-2. DEPARTMENT_HEAD
-3. PROCUREMENT
+1. Employee
+2. Manager
+3. PurchaseOfficer
 4. EXECUTIVE
 ```
 
@@ -51,9 +51,9 @@ The approval service enforces role-based validation on all approval/rejection en
 
 | Approval Step | Required Role | Allowed User Roles |
 |---|---|---|
-| Step 1 (PR_CREATOR) | PR_CREATOR | Employee, Manager, PurchaseOfficer, Executive, Admin |
-| Step 2 (DEPARTMENT_HEAD) | DEPARTMENT_HEAD | Manager, Executive, Admin |
-| Step 3 (PROCUREMENT) | PROCUREMENT | PurchaseOfficer, Executive, Admin |
+| Step 1 (Employee) | Employee | Employee, Manager, PurchaseOfficer, Executive, Admin |
+| Step 2 (Manager) | Manager | Manager, Executive, Admin |
+| Step 3 (PurchaseOfficer) | PurchaseOfficer | PurchaseOfficer, Executive, Admin |
 | Step 4 (EXECUTIVE) | EXECUTIVE | Executive, Admin |
 
 ### Behavior
@@ -97,7 +97,7 @@ Notes:
   "instance_id": 1,
   "step_order": 1,
   "approver_id": 100,
-  "role": "PR_CREATOR",
+  "role": "Employee",
   "status": "APPROVED",
   "action_at": "2026-03-08T12:05:31Z",
   "created_at": "2026-03-08T12:05:31Z",
@@ -107,7 +107,7 @@ Notes:
 
 Notes:
 - `approver_id` defaults to `0` in role-based mode for pending steps.
-- On PR submit flow, step 1 (`PR_CREATOR`) is auto-approved by requester.
+- On PR submit flow, step 1 (`Employee`) is auto-approved by requester.
 - Current implementation does not enforce role from JWT in service logic yet.
 
 ### ApprovalAction
@@ -202,9 +202,9 @@ Optional: the request body can be empty `{}` or omitted entirely.
 - No need to specify `actor_id` in body
 
 **Role Requirements:**
-- Step 1 (PR_CREATOR): Any user can approve (auto-approved on submit)
-- Step 2 (DEPARTMENT_HEAD): Manager, Executive, or Admin role
-- Step 3 (PROCUREMENT): PurchaseOfficer, Executive, or Admin role
+- Step 1 (Employee): Any user can approve (auto-approved on submit)
+- Step 2 (Manager): Manager, Executive, or Admin role
+- Step 3 (PurchaseOfficer): PurchaseOfficer, Executive, or Admin role
 - Step 4 (EXECUTIVE): Executive or Admin role
 
 Response: `200 OK` with updated instance.
@@ -235,9 +235,9 @@ Optional: the request body can be empty `{}` or omitted entirely.
 - No need to specify `actor_id` in body
 
 **Role Requirements:**
-- Step 1 (PR_CREATOR): Any user can reject (rarely used—step 1 is auto-approved)
-- Step 2 (DEPARTMENT_HEAD): Manager, Executive, or Admin role
-- Step 3 (PROCUREMENT): PurchaseOfficer, Executive, or Admin role
+- Step 1 (Employee): Any user can reject (rarely used-step 1 is auto-approved)
+- Step 2 (Manager): Manager, Executive, or Admin role
+- Step 3 (PurchaseOfficer): PurchaseOfficer, Executive, or Admin role
 - Step 4 (EXECUTIVE): Executive or Admin role
 
 Response: `200 OK` with updated instance.
@@ -339,8 +339,8 @@ Rejecting a workflow immediately stops the approval process:
 
 **Example Flow:**
 ```
-1. PR submitted → Step 1 (PR_CREATOR) auto-approved
-2. current_step = 2 (DEPARTMENT_HEAD pending)
+1. PR submitted -> Step 1 (Employee) auto-approved
+2. current_step = 2 (Manager pending)
 3. Reject at step 2 → entire workflow REJECTED
 4. Steps 3 & 4 never evaluated
 ```
@@ -378,8 +378,8 @@ Payload:
 Behavior:
 - Approval Service consumes the event.
 - If no workflow exists for that PR, it auto-creates one with 4 steps.
-- Step 1 (`PR_CREATOR`) is auto-approved when the workflow is created from PR submit.
-- Workflow starts waiting at step 2 (`DEPARTMENT_HEAD`).
+- Step 1 (`Employee`) is auto-approved when the workflow is created from PR submit.
+- Workflow starts waiting at step 2 (`Manager`).
 - `workflow_id` from event is saved in `approval_instances.workflow_id`.
 
 ### Published Events (Outgoing)
@@ -486,8 +486,8 @@ Expect:
 - 4 steps exist
 
 Also expect:
-- step 1 (`PR_CREATOR`) is already `APPROVED`
-- first pending step is step 2 (`DEPARTMENT_HEAD`)
+- step 1 (`Employee`) is already `APPROVED`
+- first pending step is step 2 (`Manager`)
 
 ### Step 5-7: Approve Remaining 3 Steps
 

@@ -13,9 +13,9 @@ const (
 type ApprovalRole string
 
 const (
-	ApprovalRolePRCreator      ApprovalRole = "PR_CREATOR"
-	ApprovalRoleDepartmentHead ApprovalRole = "DEPARTMENT_HEAD"
-	ApprovalRoleProcurement    ApprovalRole = "PROCUREMENT"
+	ApprovalRolePRCreator      ApprovalRole = "Employee"
+	ApprovalRoleDepartmentHead ApprovalRole = "Manager"
+	ApprovalRoleProcurement    ApprovalRole = "PurchaseOfficer"
 	ApprovalRoleExecutive      ApprovalRole = "EXECUTIVE"
 )
 
