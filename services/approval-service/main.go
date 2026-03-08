@@ -5,7 +5,9 @@ import (
 	"os"
 
 	"github.com/core-procurement/approval-service/config"
+	"github.com/core-procurement/approval-service/messaging"
 	"github.com/core-procurement/approval-service/routes"
+	"github.com/core-procurement/approval-service/services"
 	"github.com/joho/godotenv"
 )
 
@@ -15,6 +17,20 @@ func main() {
 	}
 
 	config.ConnectDatabase()
+
+	// Connect to RabbitMQ
+	if err := messaging.ConnectRabbitMQ(); err != nil {
+		log.Fatalf("failed to connect to RabbitMQ: %v", err)
+	}
+	defer messaging.MQClient.Close()
+
+	// Setup message broker
+	if err := messaging.MQClient.DeclareExchange(messaging.ExchangeName); err != nil {
+		log.Fatalf("failed to declare exchange: %v", err)
+	}
+
+	// Start event subscribers in a goroutine
+	go services.SubscribeToPREvents()
 
 	r := routes.SetupRouter()
 

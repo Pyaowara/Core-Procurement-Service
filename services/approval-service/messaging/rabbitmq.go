@@ -61,29 +61,6 @@ func (r *RabbitMQ) DeclareExchange(exchangeName string) error {
 	)
 }
 
-// DeclareQueue creates a queue if it doesn't exist
-func (r *RabbitMQ) DeclareQueue(queueName string) (amqp.Queue, error) {
-	return r.Channel.QueueDeclare(
-		queueName,
-		true,
-		false,
-		false,
-		false,
-		nil,
-	)
-}
-
-// BindQueue binds a queue to an exchange
-func (r *RabbitMQ) BindQueue(queueName, exchangeName, routingKey string) error {
-	return r.Channel.QueueBind(
-		queueName,
-		routingKey,
-		exchangeName,
-		false,
-		nil,
-	)
-}
-
 // PublishMessage publishes a message to an exchange
 func (r *RabbitMQ) PublishMessage(exchangeName, routingKey string, body []byte) error {
 	// Check if connection is still alive
@@ -105,5 +82,28 @@ func (r *RabbitMQ) PublishMessage(exchangeName, routingKey string, body []byte) 
 			ContentType: "application/json",
 			Body:        body,
 		},
+	)
+}
+
+// DeclareQueue creates a queue if it doesn't exist
+func (r *RabbitMQ) DeclareQueue(queueName string) (amqp.Queue, error) {
+	return r.Channel.QueueDeclare(
+		queueName,
+		true,  // durable
+		false, // delete when unused
+		false, // exclusive
+		false, // no-wait
+		nil,   // arguments
+	)
+}
+
+// BindQueue binds a queue to an exchange with a routing key
+func (r *RabbitMQ) BindQueue(queueName, exchangeName, routingKey string) error {
+	return r.Channel.QueueBind(
+		queueName,
+		routingKey,
+		exchangeName,
+		false,
+		nil,
 	)
 }
