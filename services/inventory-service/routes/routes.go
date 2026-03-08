@@ -2,8 +2,9 @@ package routes
 
 import (
 	"net/http"
-	"github.com/core-procurement/inventory-service/middleware"
+
 	"github.com/core-procurement/inventory-service/handlers"
+	"github.com/core-procurement/inventory-service/middleware"
 	"github.com/gin-gonic/gin"
 )
 

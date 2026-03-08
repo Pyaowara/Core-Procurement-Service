@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/core-procurement/approval-service/models"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -22,5 +23,13 @@ func ConnectDatabase() {
 	}
 
 	log.Println("database connection established")
+
+	// AutoMigrate all models
+	db.AutoMigrate(
+		&models.ApprovalInstance{},
+		&models.ApprovalStep{},
+		&models.ApprovalAction{},
+	)
+
 	DB = db
 }
