@@ -19,7 +19,7 @@ type PurchaseOrder struct {
 	gorm.Model
 	ID             uint     `gorm:"primaryKey"`
 	PONumber       string   `gorm:"unique;not null"`
-	PRID           uint     `gorm:"not null;index;unique"`
+	PRID           uint     `gorm:"not null;index"`
 	VendorID       uint     `gorm:"not null;index"`
 	Status         POStatus `gorm:"type:varchar(20);default:'DRAFT'"`
 	CreditDay      int      `gorm:"default:0"`

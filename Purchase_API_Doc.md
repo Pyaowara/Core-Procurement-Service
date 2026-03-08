@@ -16,6 +16,14 @@
 | `Employee`        | Create/submit own PRs                          |
 | `Executive`       | (Reserved for approval workflow)               |
 
+## Key Features
+
+- **Auto-Generated PR Numbers**: Format `PR-YYYYMMDD-{PRID:06d}` (e.g., PR-20260305-000001)
+- **Inventory Integration**: Stock levels checked during PR creation/update
+- **Smart PR Item Creation**: Only PR items with insufficient stock are created
+- **Snapshot-Based Auditing**: Captures state at PR submission and PO creation for audit trails
+- **Event-Driven Architecture**: RabbitMQ integration for inter-service communication
+
 ## Authentication
 
 All protected endpoints require a JWT token via **cookie** or **Authorization header**:
@@ -49,13 +57,24 @@ Authorization: Bearer <token>
 
 🔒 **Auth Required**: `Employee`, `Manager`, `Admin`
 
-Create a new Purchase Request in DRAFT status.
+Create a new Purchase Request in DRAFT status using an **atomic transaction**. PR number is auto-generated if not provided (format: `PR-YYYYMMDD-{PRID:06d}`).
+
+**Transaction Behavior**: 
+- PR creation, item validation, and PR items creation are atomic using database transaction
+- If any step fails or no items are created, the entire transaction is rolled back
+- No orphaned PR records will exist without items
+
+**Key Behavior**: 
+- Checks inventory stock for each requested item
+- Only creates PR items when stock is **insufficient**
+- PR item quantity = (requested qty - available qty)
+- If item not found in inventory: creates PR for full requested qty
 
 **Request Body**
 
 ```json
 {
-  "pr_number": "000001",
+  "pr_number": "PR-20260305-000001",
   "department": "Sales",
   "items": [
     {
@@ -72,6 +91,8 @@ Create a new Purchase Request in DRAFT status.
 }
 ```
 
+**Note**: `pr_number` is optional. If omitted, it will be auto-generated.
+
 **Response** `201 Created`
 
 ```json
@@ -79,21 +100,22 @@ Create a new Purchase Request in DRAFT status.
   "message": "PR created successfully",
   "data": {
     "id": 1,
-    "pr_number": "000001",
+    "pr_number": "PR-20260305-000001",
     "requester_id": 1,
     "department": "Sales",
     "status": "DRAFT",
+    "workflow_id": null,
     "items": [
       {
         "id": 1,
         "item_name": "Printer Paper",
         "description": "A4 paper 80gsm",
-        "quantity": 100,
+        "quantity": 50,
         "unit": "ชิ้น",
         "price_per_unit": 5.50,
         "discount": 10,
         "discount_unit": "%",
-        "total_price": 495.00,
+        "total_price": 242.50,
         "required_date": "2026-03-15T00:00:00Z",
         "current_stock_at_submit": 0,
         "stock_check_at": null
@@ -101,17 +123,29 @@ Create a new Purchase Request in DRAFT status.
     ],
     "created_at": "2026-03-05T15:04:05Z",
     "updated_at": "2026-03-05T15:04:05Z"
-  }
+  },
+  "inventory_check_summary": {
+    "Printer Paper": {
+      "requested_qty": 100,
+      "available_qty": 50,
+      "pr_qty_created": 50,
+      "status": "insufficient stock (50 available), creating PR for shortage of 50 units"
+    }
+  },
+  "pr_items_created_count": 1,
+  "total_items_requested": 1,
+  "items_with_sufficient_qty": 0
 }
 ```
 
-**Error** `400 Bad Request`
+**Error Responses**
 
-```json
-{
-  "error": "validation error message"
-}
-```
+| Status | Error Message | Description |
+| ------ | ------------- | ----------- |
+| `400` | `"no items to create PR - all items have sufficient stock"` | All requested items have sufficient inventory; PR is not created |
+| `400` | `"validation error message"` | Request validation failed |
+
+**Note**: Transaction ensures that if any error occurs, the PR and all items are rolled back. Either the complete PR with items is created, or nothing at all.
 
 ---
 
@@ -135,13 +169,23 @@ Get all PRs for the current user (requester_id).
 [
   {
     "id": 1,
-    "pr_number": "000001",
+    "pr_number": "PR-20260305-000001",
     "requester_id": 1,
     "department": "Sales",
     "status": "PENDING",
     "workflow_id": "WF_1_20260305150405",
-    "items": [...],
-    "created_at": "2026-03-05T15:04:05Z"
+    "items": [
+      {
+        "id": 1,
+        "item_name": "Printer Paper",
+        "quantity": 50,
+        "unit": "ชิ้น",
+        "price_per_unit": 5.50,
+        "required_date": "2026-03-15T00:00:00Z"
+      }
+    ],
+    "created_at": "2026-03-05T15:04:05Z",
+    "updated_at": "2026-03-05T15:04:05Z"
   }
 ]
 ```
@@ -159,7 +203,7 @@ Get PR details by ID.
 ```json
 {
   "id": 1,
-  "pr_number": "000001",
+  "pr_number": "PR-20260305-000001",
   "requester_id": 1,
   "department": "Sales",
   "status": "PENDING",
@@ -168,7 +212,7 @@ Get PR details by ID.
     {
       "id": 1,
       "item_name": "Printer Paper",
-      "quantity": 100,
+      "quantity": 50,
       "unit": "ชิ้น",
       "price_per_unit": 5.50,
       "current_stock_at_submit": 45,
@@ -176,7 +220,8 @@ Get PR details by ID.
       "required_date": "2026-03-15T00:00:00Z"
     }
   ],
-  "created_at": "2026-03-05T15:04:05Z"
+  "created_at": "2026-03-05T15:04:05Z",
+  "updated_at": "2026-03-05T15:04:05Z"
 }
 ```
 
@@ -194,7 +239,12 @@ Get PR details by ID.
 
 🔒 **Auth Required**: `Employee`, `Manager`, `Admin`
 
-Update PR (only DRAFT status allowed).
+Update PR (only DRAFT status allowed) using an **atomic transaction**. Works the same as CreatePR with inventory checking and smart PR item creation based on stock availability.
+
+**Transaction Behavior**:
+- Department update and item changes are atomic
+- If any step fails or no items are created, the entire transaction is rolled back
+- All changes succeed together or none at all
 
 **Request Body** (partial update)
 
@@ -205,7 +255,7 @@ Update PR (only DRAFT status allowed).
     {
       "item_name": "Printer Paper",
       "description": "A4 paper 80gsm",
-      "quantity": 50,
+      "quantity": 200,
       "unit": "ชิ้น",
       "price_per_unit": 5.50,
       "discount": 10,
@@ -223,11 +273,22 @@ Update PR (only DRAFT status allowed).
   "message": "PR updated successfully",
   "data": {
     "id": 1,
-    "pr_number": "000001",
+    "pr_number": "PR-20260305-000001",
     "department": "Marketing",
     "status": "DRAFT",
     "items": [...]
-  }
+  },
+  "inventory_check_summary": {
+    "Printer Paper": {
+      "requested_qty": 200,
+      "available_qty": 45,
+      "pr_qty_created": 155,
+      "status": "insufficient stock (45 available), creating PR for shortage of 155 units"
+    }
+  },
+  "pr_items_created_count": 1,
+  "total_items_requested": 1,
+  "items_with_sufficient_qty": 0
 }
 ```
 
@@ -239,18 +300,25 @@ Update PR (only DRAFT status allowed).
 }
 ```
 
+Other errors:
+- `"no items to update PR - all items have sufficient stock"` — All requested items have sufficient stock; PR items are not updated
+- `"PR not found"` — PR with given ID does not exist
+
+**Note**: Transaction ensures atomicity. Department update and item changes are committed together, or rolled back together if any step fails.
+
 ---
 
 ### `POST /pr/:id/submit`
 
 🔒 **Auth Required**: `Employee`, `Manager`, `Admin`
 
-**Submit PR for Approval** — Executes 5-step workflow:
-1. **Validate Data** — Check items, required dates, quantities
-2. **Check Inventory Availability** — Query Inventory Service for stock levels
-3. **Take Inventory Snapshot** — Capture stock state and create snapshot
-4. **Change Status** — Update PR status DRAFT → PENDING, generate WorkflowID
-5. **Trigger Approval** — Publish `pr.ready.for.approval` event to Approval Service
+**Submit PR for Approval** — Executes workflow:
+1. **Validate Data** — Check items and required fields
+2. **Create Inventory Snapshot** — Capture PR state for audit trail
+3. **Change Status** — PR status DRAFT → PENDING, generate WorkflowID
+4. **Trigger Approval** — Publish `pr.ready.for.approval` event to Approval Service
+
+**NOTE**: Inventory checking happens during CreatePR/UpdatePR, not here.
 
 **Request Body**: Empty (no payload required)
 
@@ -261,27 +329,18 @@ Update PR (only DRAFT status allowed).
   "message": "PR submitted successfully",
   "data": {
     "id": 1,
-    "pr_number": "000001",
+    "pr_number": "PR-20260305-000001",
     "status": "PENDING",
     "workflow_id": "WF_1_20260305150405",
     "items": [
       {
         "item_name": "Printer Paper",
-        "quantity": 100,
+        "quantity": 50,
         "unit": "ชิ้น",
-        "current_stock_at_submit": 45,
-        "stock_check_at": "2026-03-05T15:04:05Z",
         "required_date": "2026-03-15T00:00:00Z"
       }
     ]
   },
-  "inventory_check_summary": {
-    "Printer Paper": {
-      "available_qty": 45,
-      "checked_at": "now"
-    }
-  },
-  "has_inventory_warnings": false,
   "snapshot_created": true,
   "workflow_id": "WF_1_20260305150405",
   "approval_event_published": true
@@ -299,49 +358,39 @@ Update PR (only DRAFT status allowed).
 | `500` | `"failed to create snapshot"` | Snapshot creation failed |
 | `500` | `"failed to publish approval event"` | Event publishing failed |
 
-**Example Error Response** (`400 Bad Request`)
-
-```json
-{
-  "error": "validation failed",
-  "details": [
-    "Item 1 (Printer Paper): required_date must be specified",
-    "Item 2 (Pen): quantity must be greater than 0"
-  ]
-}
-```
-
 ---
 
 ### `GET /pr/:id/snapshot`
 
 🔒 **Auth Required**: Any authenticated user
 
-Get the inventory snapshot created when PR was submitted. Shows comparison between snapshot and current PR items (used for audit trail).
+Retrieves the inventory snapshot created when PR was submitted. Shows comparison between snapshot data and current PR items for audit trail.
 
 **Response** `200 OK`
 
 ```json
 {
   "pr_id": 1,
-  "pr_number": "000001",
+  "pr_number": "PR-20260305-000001",
   "status": "PENDING",
   "snapshot_created": "2026-03-05T15:04:05Z",
   "items_comparison": [
     {
       "snapshot_data": {
+        "id": 1,
         "item_name": "Printer Paper",
-        "quantity": 100,
+        "quantity": 50,
         "unit": "ชิ้น",
         "price_per_unit": 5.50,
-        "current_stock_at_submit": 45
+        "required_date": "2026-03-15T00:00:00Z"
       },
       "current_data": {
+        "id": 1,
         "item_name": "Printer Paper",
-        "quantity": 100,
+        "quantity": 50,
         "unit": "ชิ้น",
         "price_per_unit": 5.50,
-        "current_stock_at_submit": 45
+        "required_date": "2026-03-15T00:00:00Z"
       },
       "has_changed": false,
       "changed_fields": []
@@ -368,13 +417,21 @@ Get the inventory snapshot created when PR was submitted. Shows comparison betwe
 
 🔒 **Auth Required**: `Employee`, `Manager`, `Admin`
 
-Soft delete PR (soft delete flag is set, record remains in DB for audit trail).
+Soft delete a PR. 
 
 **Response** `200 OK`
 
 ```json
 {
   "message": "PR deleted successfully"
+}
+```
+
+**Error** `404 Not Found`
+
+```json
+{
+  "error": "PR not found"
 }
 ```
 
@@ -386,7 +443,12 @@ Soft delete PR (soft delete flag is set, record remains in DB for audit trail).
 
 🔒 **Auth Required**: `PurchaseOfficer`, `Admin`
 
-Generate a Purchase Order from an approved PR.
+Create a Purchase Order from an approved PR using an **atomic transaction**. PO items are automatically sourced from the selected PR items. Multiple POs can be created from the same PR.
+
+**Transaction Behavior**: 
+- PO creation, PO items creation, and vendor snapshot creation are atomic
+- If any step fails, the entire transaction is rolled back
+- No orphaned PO records will exist without items
 
 **Request Body**
 
@@ -396,18 +458,46 @@ Generate a Purchase Order from an approved PR.
   "vendor_id": 1,
   "credit_day": 30,
   "due_date": "2026-04-15",
-  "po_items": [
-    {
-      "item_name": "Printer Paper",
-      "description": "A4 paper 80gsm",
-      "quantity": 100,
-      "unit": "ชิ้น",
-      "price_per_unit": 5.50,
-      "discount": 10,
-      "discount_unit": "%",
-      "required_date": "2026-03-15"
-    }
-  ]
+  "item_ids": [1, 2, 3]
+}
+```
+
+**Parameters**
+
+| Field | Type | Required | Description |
+| ----- | ---- | -------- | ----------- |
+| `pr_id` | integer | ✓ | ID of approved PR |
+| `vendor_id` | integer | ✓ | ID of vendor |
+| `credit_day` | integer | | Payment terms in days (default: 0) |
+| `due_date` | string (YYYY-MM-DD) | ✓ | Expected delivery date |
+| `item_ids` | array[integer] | | Array of PR item IDs to include. All IDs must belong to the specified PR. If omitted, all PR items will be used. |
+
+**Validation Rules**
+
+- All PR item IDs in `item_ids` must belong to the specified PR
+- At least 1 valid PO item must be created (otherwise PO is not created)
+- Multiple POs can be created from the same PR with different vendors/items
+
+**Examples**
+
+Create PO with all PR items:
+```json
+{
+  "pr_id": 1,
+  "vendor_id": 1,
+  "credit_day": 30,
+  "due_date": "2026-04-15"
+}
+```
+
+Create PO with selected items:
+```json
+{
+  "pr_id": 1,
+  "vendor_id": 1,
+  "credit_day": 30,
+  "due_date": "2026-04-15",
+  "item_ids": [1, 3]
 }
 ```
 
@@ -427,6 +517,7 @@ Generate a Purchase Order from an approved PR.
     "items": [
       {
         "id": 1,
+        "po_id": 1,
         "item_name": "Printer Paper",
         "description": "A4 paper 80gsm",
         "quantity": 100,
@@ -438,13 +529,8 @@ Generate a Purchase Order from an approved PR.
         "required_date": "2026-03-15T00:00:00Z"
       }
     ],
-    "vendor_snapshot": {
-      "vendor_id": 1,
-      "vendor_name": "ABC Corporation",
-      "vendor_address": "123 Business Street",
-      "vendor_tax_id": "1234567890"
-    },
-    "created_at": "2026-03-05T15:04:05Z"
+    "created_at": "2026-03-05T15:04:05Z",
+    "updated_at": "2026-03-05T15:04:05Z"
   }
 }
 ```
@@ -453,10 +539,14 @@ Generate a Purchase Order from an approved PR.
 
 | Status | Error Message | Description |
 | ------ | ------------- | ----------- |
+| `400` | `"no valid items to create PO"` | No items selected or all selected items are invalid; PO is not created |
+| `400` | `"PR item ID X does not belong to this PR"` | Requested item ID not in PR |
 | `400` | `"only approved PRs can generate PO"` | PR is not in APPROVED status |
 | `404` | `"PR not found"` | PR ID does not exist |
 | `404` | `"vendor not found"` | Vendor ID does not exist |
-| `500` | `"failed to create PO"` | PO creation failed |
+| `500` | `"failed to create PO and items"` | Transaction failed during creation |
+
+**Note**: Uses **atomic transaction**. PO creation, PO items creation, and vendor snapshot creation either all succeed or all fail. No orphaned PO records will be created without items.
 
 ---
 
@@ -464,7 +554,7 @@ Generate a Purchase Order from an approved PR.
 
 🔒 **Auth Required**: Any authenticated user
 
-Get all POs (with optional filtering).
+Get all POs with optional filters.
 
 **Query Parameters** (optional)
 
@@ -487,7 +577,8 @@ Get all POs (with optional filtering).
     "status": "DRAFT",
     "credit_day": 30,
     "due_date": "2026-04-15T00:00:00Z",
-    "items": [...]
+    "items": [...],
+    "created_at": "2026-03-05T15:04:05Z"
   }
 ]
 ```
@@ -498,7 +589,7 @@ Get all POs (with optional filtering).
 
 🔒 **Auth Required**: Any authenticated user
 
-Get PO details by ID (includes vendor snapshot).
+Get PO details by ID, including vendor snapshot.
 
 **Response** `200 OK`
 
@@ -508,26 +599,36 @@ Get PO details by ID (includes vendor snapshot).
   "po_number": "PO_20260305150405",
   "pr_id": 1,
   "vendor_id": 1,
-  "status": "DRAFT",
+  "status": "SENT",
   "credit_day": 30,
   "due_date": "2026-04-15T00:00:00Z",
   "items": [
     {
       "id": 1,
+      "po_id": 1,
       "item_name": "Printer Paper",
+      "description": "A4 paper 80gsm",
       "quantity": 100,
       "unit": "ชิ้น",
       "price_per_unit": 5.50,
-      "total_price": 495.00
+      "discount": 10,
+      "discount_unit": "%",
+      "total_price": 495.00,
+      "required_date": "2026-03-15T00:00:00Z"
     }
   ],
   "vendor_snapshot": {
+    "id": 1,
+    "po_id": 1,
     "vendor_id": 1,
-    "vendor_name": "ABC Corporation",
-    "vendor_address": "123 Business Street",
-    "vendor_tax_id": "1234567890"
+    "vendor_name": "ABC Supplies",
+    "vendor_address": "123 Business St",
+    "vendor_tax_id": "1234567890",
+    "snapshot_data": {...},
+    "created_at": "2026-03-05T15:04:05Z"
   },
-  "created_at": "2026-03-05T15:04:05Z"
+  "created_at": "2026-03-05T15:04:05Z",
+  "updated_at": "2026-03-05T15:04:05Z"
 }
 ```
 
@@ -545,19 +646,19 @@ Get PO details by ID (includes vendor snapshot).
 
 🔒 **Auth Required**: `PurchaseOfficer`, `Admin`
 
-Update PO status or other details.
+Update PO status and other details.
 
-**Request Body** (partial update)
+**Request Body**
 
 ```json
 {
   "status": "SENT",
   "credit_day": 45,
-  "due_date": "2026-04-20"
+  "due_date": "2026-04-30"
 }
 ```
 
-**Valid Status Values**: `DRAFT`, `SENT`, `COMPLETED`
+**Valid Statuses**: `DRAFT`, `SENT`, `COMPLETED`
 
 **Response** `200 OK`
 
@@ -569,7 +670,9 @@ Update PO status or other details.
     "po_number": "PO_20260305150405",
     "status": "SENT",
     "credit_day": 45,
-    "due_date": "2026-04-20T00:00:00Z"
+    "due_date": "2026-04-30T00:00:00Z",
+    "items": [...],
+    "updated_at": "2026-03-05T15:10:00Z"
   }
 }
 ```
@@ -588,7 +691,7 @@ Update PO status or other details.
 
 🔒 **Auth Required**: `Manager`, `PurchaseOfficer`, `Admin`
 
-Record goods reception and publish event to Inventory Service for stock update.
+Record goods reception for a PO. Publishes `goods.received` event to Inventory Service.
 
 **Request Body**
 
@@ -608,13 +711,22 @@ Record goods reception and publish event to Inventory Service for stock update.
   "data": {
     "id": 1,
     "po_id": 1,
-    "received_data": "{\"Printer Paper\": 100}",
-    "received_at": "2026-03-05T15:04:05Z"
+    "received_data": {
+      "Printer Paper": 100
+    },
+    "received_at": "2026-03-05T15:15:00Z",
+    "created_at": "2026-03-05T15:15:00Z"
   }
 }
 ```
 
-**Note**: Event `goods.received` is published to Inventory Service to update stock.
+**Error** `404 Not Found`
+
+```json
+{
+  "error": "PO not found"
+}
+```
 
 ---
 
@@ -622,7 +734,7 @@ Record goods reception and publish event to Inventory Service for stock update.
 
 🔒 **Auth Required**: `PurchaseOfficer`, `Admin`
 
-Soft delete PO.
+Soft delete a PO.
 
 **Response** `200 OK`
 
@@ -632,13 +744,21 @@ Soft delete PO.
 }
 ```
 
+**Error** `404 Not Found`
+
+```json
+{
+  "error": "PO not found"
+}
+```
+
 ---
 
 ## Vendor Management
 
 ### `POST /vendor`
 
-🔒 **Auth Required**: `Admin` only
+🔒 **Auth Required**: `Admin`
 
 Create a new vendor.
 
@@ -646,9 +766,9 @@ Create a new vendor.
 
 ```json
 {
-  "vendor_name": "ABC Corporation",
-  "vendor_address": "123 Business Street, Bangkok",
-  "vendor_tax_id": "1234567890"
+  "name": "ABC Supplies",
+  "address": "123 Business Street, Bangkok 10110",
+  "tax_id": "1234567890123"
 }
 ```
 
@@ -659,10 +779,11 @@ Create a new vendor.
   "message": "Vendor created successfully",
   "data": {
     "id": 1,
-    "vendor_name": "ABC Corporation",
-    "vendor_address": "123 Business Street, Bangkok",
-    "vendor_tax_id": "1234567890",
-    "created_at": "2026-03-05T15:04:05Z"
+    "name": "ABC Supplies",
+    "address": "123 Business Street, Bangkok 10110",
+    "tax_id": "1234567890123",
+    "created_at": "2026-03-05T15:04:05Z",
+    "updated_at": "2026-03-05T15:04:05Z"
   }
 }
 ```
@@ -671,7 +792,7 @@ Create a new vendor.
 
 ```json
 {
-  "error": "vendor_tax_id must be unique"
+  "error": "validation error message"
 }
 ```
 
@@ -689,10 +810,19 @@ Get all vendors.
 [
   {
     "id": 1,
-    "vendor_name": "ABC Corporation",
-    "vendor_address": "123 Business Street, Bangkok",
-    "vendor_tax_id": "1234567890",
-    "created_at": "2026-03-05T15:04:05Z"
+    "name": "ABC Supplies",
+    "address": "123 Business Street, Bangkok 10110",
+    "tax_id": "1234567890123",
+    "created_at": "2026-03-05T15:04:05Z",
+    "updated_at": "2026-03-05T15:04:05Z"
+  },
+  {
+    "id": 2,
+    "name": "XYZ Trading",
+    "address": "456 Trade Avenue, Bangkok 10120",
+    "tax_id": "9876543210987",
+    "created_at": "2026-03-04T10:00:00Z",
+    "updated_at": "2026-03-04T10:00:00Z"
   }
 ]
 ```
@@ -710,10 +840,11 @@ Get vendor details by ID.
 ```json
 {
   "id": 1,
-  "vendor_name": "ABC Corporation",
-  "vendor_address": "123 Business Street, Bangkok",
-  "vendor_tax_id": "1234567890",
-  "created_at": "2026-03-05T15:04:05Z"
+  "name": "ABC Supplies",
+  "address": "123 Business Street, Bangkok 10110",
+  "tax_id": "1234567890123",
+  "created_at": "2026-03-05T15:04:05Z",
+  "updated_at": "2026-03-05T15:04:05Z"
 }
 ```
 
@@ -729,16 +860,17 @@ Get vendor details by ID.
 
 ### `PUT /vendor/:id`
 
-🔒 **Auth Required**: `Admin` only
+🔒 **Auth Required**: `Admin`
 
 Update vendor information.
 
-**Request Body** (partial update)
+**Request Body**
 
 ```json
 {
-  "vendor_name": "ABC Corporation (Updated)",
-  "vendor_address": "456 New Street, Bangkok"
+  "name": "ABC Supplies Co., Ltd.",
+  "address": "123 Business Street, Bangkok 10110, Thailand",
+  "tax_id": "1234567890123"
 }
 ```
 
@@ -749,10 +881,19 @@ Update vendor information.
   "message": "Vendor updated successfully",
   "data": {
     "id": 1,
-    "vendor_name": "ABC Corporation (Updated)",
-    "vendor_address": "456 New Street, Bangkok",
-    "vendor_tax_id": "1234567890"
+    "name": "ABC Supplies Co., Ltd.",
+    "address": "123 Business Street, Bangkok 10110, Thailand",
+    "tax_id": "1234567890123",
+    "updated_at": "2026-03-05T15:20:00Z"
   }
+}
+```
+
+**Error** `404 Not Found`
+
+```json
+{
+  "error": "vendor not found"
 }
 ```
 
@@ -760,9 +901,9 @@ Update vendor information.
 
 ### `DELETE /vendor/:id`
 
-🔒 **Auth Required**: `Admin` only
+🔒 **Auth Required**: `Admin`
 
-Delete vendor.
+Delete a vendor.
 
 **Response** `200 OK`
 
@@ -772,309 +913,146 @@ Delete vendor.
 }
 ```
 
----
-
-## Message Events
-
-### Published Events
-
-#### 1. `pr.ready.for.approval` (Topic)
-
-Published when PR is submitted for approval via `POST /pr/:id/submit`.
-
-**Payload**
+**Error** `404 Not Found`
 
 ```json
 {
-  "pr_id": 1,
-  "pr_number": "000001",
-  "requester_id": 1,
-  "department": "Sales",
-  "items": [
-    {
-      "item_name": "Printer Paper",
-      "description": "A4 paper 80gsm",
-      "quantity": 100,
-      "unit": "ชิ้น",
-      "price_per_unit": 5.50,
-      "discount": 10,
-      "discount_unit": "%",
-      "total_price": 495.00,
-      "required_date": "2026-03-15"
-    }
-  ],
-  "workflow_id": "WF_1_20260305150405",
-  "timestamp": "2026-03-05T15:04:05Z"
-}
-```
-
-**Consumer**: Approval Service → Creates approval workflow
-
----
-
-#### 2. `po.created` (Topic)
-
-Published when PO is created via `POST /po`.
-
-**Payload**
-
-```json
-{
-  "po_id": 1,
-  "po_number": "PO_20260305150405",
-  "pr_id": 1,
-  "vendor_id": 1,
-  "vendor_name": "ABC Corporation",
-  "items": [...],
-  "due_date": "2026-04-15",
-  "timestamp": "2026-03-05T15:04:05Z"
+  "error": "vendor not found"
 }
 ```
 
 ---
 
-#### 3. `goods.received` (Topic)
+## API Endpoints Summary
 
-Published when goods are received via `POST /po/:id/receive`.
+| Method | Endpoint | Description | Auth |
+|--------|----------|-------------|------|
+| POST | `/pr` | Create new PR | Employee, Manager, Admin |
+| GET | `/pr` | List user's PRs | Authenticated |
+| GET | `/pr/:id` | Get PR details | Authenticated |
+| PUT | `/pr/:id` | Update PR (DRAFT only) | Employee, Manager, Admin |
+| POST | `/pr/:id/submit` | Submit PR for approval | Employee, Manager, Admin |
+| GET | `/pr/:id/snapshot` | Get PR audit snapshot | Authenticated |
+| DELETE | `/pr/:id` | Delete PR | Employee, Manager, Admin |
+| POST | `/po` | Create PO from approved PR | PurchaseOfficer, Admin |
+| GET | `/po` | List all POs | Authenticated |
+| GET | `/po/:id` | Get PO details | Authenticated |
+| PUT | `/po/:id` | Update PO status | PurchaseOfficer, Admin |
+| POST | `/po/:id/receive` | Record goods reception | Manager, PurchaseOfficer, Admin |
+| DELETE | `/po/:id` | Delete PO | PurchaseOfficer, Admin |
+| POST | `/vendor` | Create vendor | Admin |
+| GET | `/vendor` | List all vendors | Authenticated |
+| GET | `/vendor/:id` | Get vendor details | Authenticated |
+| PUT | `/vendor/:id` | Update vendor | Admin |
+| DELETE | `/vendor/:id` | Delete vendor | Admin |
 
-**Payload**
+---
 
-```json
-{
-  "po_id": 1,
-  "po_number": "PO_20260305150405",
-  "received_qty": {
-    "Printer Paper": 100
-  },
-  "timestamp": "2026-03-05T15:04:05Z"
-}
+## Event Publishing
+
+The Purchase Service publishes the following events to RabbitMQ:
+
+| Event | Published When | Payload |
+|-------|---|---------|
+| `pr.ready.for.approval` | PR is submitted for approval | PR details, items, workflow ID |
+| `po.created` | PO is created from approved PR | PO details, vendor info, items |
+| `goods.received` | Goods are received for a PO | PO ID, received quantities |
+
+---
+
+## Approval Workflow
+
+### PR Status Transitions
+
+```
+DRAFT → (submit) → PENDING → (approval event) → APPROVED
+                         ↓                         ↓
+                    (reject event)             (generate PO)
+                         ↓                         ↓
+                      REJECTED                 PO Status
 ```
 
-**Consumer**: Inventory Service → Updates stock
+### Approval Event Handling
+
+The Purchase Service auto-subscribes to approval events:
+
+- **approval.completed**: Changes PR status DRAFT → APPROVED
+- **approval.rejected**: Changes PR status DRAFT → REJECTED
 
 ---
 
-### Subscribed Events
+## Data Model Reference
 
-#### 1. `approval.completed` (From Approval Service)
+### PR Statuses
+- `DRAFT`: Initial state, can be edited/deleted
+- `PENDING`: Submitted for approval, awaiting approval service
+- `APPROVED`: Approved by approval workflow
+- `REJECTED`: Rejected by approval workflow
 
-Updates PR status to APPROVED when approval is completed.
+### PO Statuses
+- `DRAFT`: Initial state created from approved PR
+- `SENT`: Sent to vendor
+- `COMPLETED`: Goods fully received
 
-**Payload**
+### Inventory Checking Logic
 
-```json
-{
-  "pr_id": 1,
-  "workflow_id": "WF_1_20260305150405",
-  "status": "approved",
-  "approved_at": "2026-03-05T15:04:05Z"
-}
-```
+**During CreatePR/UpdatePR**:
+1. Check current inventory stock for each item via Inventory Service
+2. **If available_qty ≥ requested_qty**: No PR item created (sufficient stock)
+3. **If available_qty < requested_qty**: Create PR item with qty = (requested - available)
+4. **If item not found**: Create PR item with full requested qty
 
----
-
-#### 2. `approval.rejected` (From Approval Service)
-
-Updates PR status to REJECTED when approval is rejected.
-
-**Payload**
-
-```json
-{
-  "pr_id": 1,
-  "workflow_id": "WF_1_20260305150405",
-  "reason": "Budget exceeded",
-  "rejected_at": "2026-03-05T15:04:05Z"
-}
-```
-
----
-
-## Common Error Responses
-
-| Status | Response | Description |
-| ------ | -------- | ----------- |
-| `400` | `{"error": "..."}` | Invalid request body or validation failed |
-| `401` | `{"error": "unauthorized"}` | Missing token |
-| `401` | `{"error": "invalid or expired token"}` | Bad or expired JWT |
-| `403` | `{"error": "access denied"}` | Insufficient role permissions |
-| `404` | `{"error": "...not found"}` | Resource does not exist |
-| `500` | `{"error": "..."}` | Server error |
-
----
-
-## Data Models
-
-### Purchase Request (PR)
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `id` | uint | Primary key |
-| `pr_number` | string | Unique PR number |
-| `requester_id` | uint | User who requested |
-| `department` | string | Department name |
-| `status` | string | DRAFT, PENDING, APPROVED, REJECTED |
-| `workflow_id` | string | Link to Approval Service workflow |
-| `is_deleted` | bool | Soft delete flag |
-| `created_at` | timestamp | Creation time |
-| `updated_at` | timestamp | Last update time |
-
-### PR Item
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `id` | uint | Primary key |
-| `pr_id` | uint | Foreign key to PR |
-| `item_name` | string | Item name (snapshot at submission) |
-| `description` | string | Item description |
-| `quantity` | int | Quantity requested |
-| `unit` | string | Unit of measurement (ชิ้น, แท่ง, etc.) |
-| `price_per_unit` | decimal | Price per unit (snapshot at submission) |
-| `discount` | decimal | Discount amount |
-| `discount_unit` | string | % or BAHT |
-| `total_price` | decimal | Total price |
-| `required_date` | timestamp | Date item is needed |
-| `current_stock_at_submit` | int | **NEW** Stock available at submission time |
-| `stock_check_at` | timestamp | **NEW** When stock was checked |
-
-### Purchase Order (PO)
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `id` | uint | Primary key |
-| `po_number` | string | Unique PO number |
-| `pr_id` | uint | Reference to PR |
-| `vendor_id` | uint | Reference to vendor |
-| `status` | string | DRAFT, SENT, COMPLETED |
-| `credit_day` | int | Payment terms (days) |
-| `due_date` | timestamp | Expected delivery date |
-| `is_deleted` | bool | Soft delete flag |
-| `created_at` | timestamp | Creation time |
-| `updated_at` | timestamp | Last update time |
-
-### PO Item
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `id` | uint | Primary key |
-| `po_id` | uint | Foreign key to PO |
-| `item_name` | string | Item name |
-| `description` | string | Item description |
-| `quantity` | int | Quantity ordered |
-| `unit` | string | Unit of measurement |
-| `price_per_unit` | decimal | Price per unit |
-| `discount` | decimal | Discount amount |
-| `discount_unit` | string | % or BAHT |
-| `total_price` | decimal | Total price |
-| `required_date` | timestamp | Date item is needed |
-
-### Vendor
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `id` | uint | Primary key |
-| `vendor_name` | string | Vendor company name |
-| `vendor_address` | string | Vendor address |
-| `vendor_tax_id` | string | Tax ID (unique) |
-
-### Data Snapshots
-
-#### Inventory Snapshot (InventorySnapshot)
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `id` | uint | Primary key |
-| `pr_id` | uint | Foreign key to PR (unique) |
-| `snapshot_data` | JSON | JSON of PR Items at submission time |
-| `created_at` | timestamp | When snapshot was created |
-
-**Purpose**: Audit trail, data consistency, change detection
-
-#### Vendor Snapshot (VendorSnapshot)
-
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `id` | uint | Primary key |
-| `po_id` | uint | Foreign key to PO |
-| `vendor_id` | uint | Vendor ID |
-| `vendor_name` | string | Vendor name (snapshot at PO creation) |
-| `vendor_address` | string | Vendor address (snapshot) |
-| `vendor_tax_id` | string | Vendor tax ID (snapshot) |
-| `snapshot_data` | JSON | Full vendor data snapshot |
-
-**Purpose**: Data consistency — vendor info doesn't change retroactively
+This smart logic reduces unnecessary procurement by only creating PR items when there's actual stock shortage, ensuring efficient resource management.
 
 ---
 
 ## Example Workflow
 
-### Complete PR → PO Procurement Flow
-
+### 1. Create PR with Inventory Checking
 ```
-1. Employee creates PR (POST /pr)
-   ├─ Status: DRAFT
-   ├─ Items: List of needed items
-   └─ Stored in database
-
-2. Employee submits PR for approval (POST /pr/:id/submit)
-   ├─ STEP 1: Validate data (required_date, quantity)
-   ├─ STEP 2: Check inventory with Inventory Service
-   ├─ STEP 3: Create snapshot with stock info
-   ├─ STEP 4: PR Status: DRAFT → PENDING, generate WorkflowID
-   ├─ STEP 5: Publish pr.ready.for.approval event
-   └─ Response includes stock availability summary
-
-3. Approval Service processes event (async)
-   ├─ Creates approval workflow
-   ├─ Manager/Executive reviews PR
-   └─ Publishes approval.completed or approval.rejected
-
-4. Purchase Service receives approval event (subscribed)
-   ├─ If approval.completed: PR Status → APPROVED
-   └─ If approval.rejected: PR Status → REJECTED
-
-5. Purchase Officer generates PO (POST /po)
-   ├─ Only from APPROVED PR
-   ├─ Select vendor
-   ├─ Create VendorSnapshot
-   ├─ Publish po.created event
-   └─ Status: DRAFT
-
-6. Purchase Officer updates PO status (PUT /po/:id)
-   ├─ Status: DRAFT → SENT
-   └─ Vendor notified (custom logic)
-
-7. Manager records goods reception (POST /po/:id/receive)
-   ├─ Record received quantities
-   ├─ Create GoodsReceived record
-   ├─ Publish goods.received event
-   └─ Event consumed by Inventory Service to update stock
-
-8. Inventory Service updates stock (subscribed event)
-   ├─ Receives goods.received event
-   ├─ Updates inventory quantities
-   └─ Records transaction
+POST /pr
+{
+  "department": "IT",
+  "items": [
+    {"item_name": "Laptop", "quantity": 10, ...}
+  ]
+}
 ```
+- Checks: 10 Laptops requested, 7 available
+- Response: Creates PR with 3 Laptops (shortage)
 
----
-
-## Technology Stack
-
-- **Language**: Go 1.25.0
-- **Web Framework**: Gin v1.11.0
-- **Database**: PostgreSQL with GORM v1.31.1
-- **Message Broker**: RabbitMQ v3.13 (AMQP 0.9.1)
-- **Authentication**: JWT v5.3.1
-- **Environment**: godotenv v1.5.1
-
----
-
-## Environment Variables
-
-```env
-PORT=6769
-DB_DSN=host=localhost user=postgres password=postgres dbname=purchase_db port=5435 sslmode=disable
-JWT_SECRET=super-secret-jwt-key-change-me
-RABBITMQ_URL=amqp://guest:guest@localhost:5672/
-INVENTORY_SERVICE_URL=http://localhost:6768
+### 2. Submit PR for Approval
 ```
+POST /pr/:id/submit
+```
+- Creates snapshot of current PR state
+- Publishes event to Approval Service
+- Status changes: DRAFT → PENDING
+
+### 3. Approval Service Approves (event-driven)
+- Receives approval event
+- Updates PR: PENDING → APPROVED
+
+### 4. Generate PO from Approved PR
+```
+POST /po
+{
+  "pr_id": 1,
+  "vendor_id": 1,
+  "po_items": [...]
+}
+```
+- Creates PO in DRAFT status
+- Creates vendor snapshot
+- Publishes PO_CREATED event
+
+### 5. Send PO and Record Goods Reception
+```
+PUT /po/:id
+{"status": "SENT"}
+
+POST /po/:id/receive
+{"received_qty": {"Laptop": 3}}
+```
+- Updates status and notifies Inventory Service
+- Inventory Service updates stock levels
