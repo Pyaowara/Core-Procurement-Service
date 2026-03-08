@@ -60,7 +60,7 @@ The Purchase Service manages the complete procurement workflow including:
 ### Purchase Order (PO)
 - **po_id**: Primary key
 - **po_number**: Unique PO number
-- **pr_id**: Reference to source PR (1 PR → 1 PO)
+- **pr_id**: Reference to source PR (1 PR → many POs - multiple vendors/splits allowed)
 - **vendor_id**: Reference to vendor
 - **status**: DRAFT, SENT, COMPLETED
 - **credit_day**: Payment terms (days)
@@ -243,6 +243,8 @@ PR status updates based on approval service events:
 - **approval.rejected**: PR status → REJECTED
 
 ### 6. Generate Purchase Order (PurchaseOfficer Role)
+Multiple POs can be created from the same PR by specifying different vendors and items.
+
 ```
 POST /po
 {
@@ -250,23 +252,55 @@ POST /po
   "vendor_id": 1,
   "credit_day": 30,
   "due_date": "2026-04-15",
-  "po_items": [
-    {
-      "item_name": "Printer Paper",
-      "description": "A4 paper 80gsm",
-      "quantity": 100,
-      "unit": "ชิ้น",
-      "price_per_unit": 5.50,
-      "discount": 10,
-      "discount_unit": "%",
-      "required_date": "2026-03-15"
-    }
-  ]
+  "item_ids": [1, 2, 3]
 }
 ```
+
+**Parameters:**
+- `pr_id` (required): ID of approved PR
+- `vendor_id` (required): ID of vendor
+- `credit_day` (optional): Payment terms in days
+- `due_date` (required): Expected delivery date (YYYY-MM-DD)
+- `item_ids` (optional): Array of PR item IDs to include in PO. If not provided, all PR items will be used. All item IDs must belong to the specified PR.
+
+**Validation:**
+- All PR item IDs must belong to the specified PR, otherwise returns 400 error
+- At least 1 valid PO item must be created, otherwise PO is not created and returns 400 error
+
+**Response:**
 - Status: DRAFT
+- Created with selected PR item details (item_name, quantity, price, etc.)
 - Creates VendorSnapshot for data consistency
 - Publishes: `po.created` event to RabbitMQ
+
+**Example with all items:**
+```
+POST /po
+{
+  "pr_id": 1,
+  "vendor_id": 1,
+  "credit_day": 30,
+  "due_date": "2026-04-15"
+}
+```
+All items from PR will be included in the PO.
+
+**Example with selected items:**
+```
+POST /po
+{
+  "pr_id": 1,
+  "vendor_id": 1,
+  "credit_day": 30,
+  "due_date": "2026-04-15",
+  "item_ids": [1, 3]
+}
+```
+Only items with IDs 1 and 3 will be included in the PO (both must belong to PR ID 1).
+
+**Error Cases:**
+- `400 "PR item ID X does not belong to this PR"`: Requested item ID not found in PR
+- `400 "no valid PO items to create"`: No valid items to create PO from
 
 ### 7. Update PO Status (PurchaseOfficer Role)
 ```

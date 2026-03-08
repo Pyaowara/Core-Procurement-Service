@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -10,14 +11,15 @@ import (
 	"github.com/core-procurement/purchase-service/messaging"
 	"github.com/core-procurement/purchase-service/models"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type CreatePORequest struct {
-	PRID      uint           `json:"pr_id" binding:"required"`
-	VendorID  uint           `json:"vendor_id" binding:"required"`
-	CreditDay int            `json:"credit_day"`
-	DueDate   string         `json:"due_date" binding:"required"`
-	POItems   []CreatePOItem `json:"po_items" binding:"required"`
+	PRID      uint   `json:"pr_id" binding:"required"`
+	VendorID  uint   `json:"vendor_id" binding:"required"`
+	ItemIDs   []uint `json:"item_ids"` // Optional: if empty, use all PR items
+	CreditDay int    `json:"credit_day"`
+	DueDate   string `json:"due_date" binding:"required"`
 }
 
 type CreatePOItem struct {
@@ -53,7 +55,8 @@ func CalculateTotalPrice(quantity int, pricePerUnit float64, discount float64, d
 	return subtotal - discount
 }
 
-// GeneratePO creates a Purchase Order from an approved PR
+// GeneratePO creates a Purchase Order from an approved PR with transaction support
+// If there are no valid items to create, the PO will not be created
 func GeneratePO(c *gin.Context) {
 	var req CreatePORequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -80,54 +83,116 @@ func GeneratePO(c *gin.Context) {
 		return
 	}
 
-	dueDate, _ := time.Parse("2006-01-02", req.DueDate)
-
-	// Create PO
-	po := models.PurchaseOrder{
-		PONumber:  "PO_" + time.Now().Format("20060102150405"),
-		PRID:      req.PRID,
-		VendorID:  req.VendorID,
-		Status:    models.POStatusDraft,
-		CreditDay: req.CreditDay,
-		DueDate:   dueDate,
+	// Create map of all PR items for validation
+	prItemsMap := make(map[uint]*models.PRItem)
+	for i := range pr.Items {
+		prItemsMap[pr.Items[i].ID] = &pr.Items[i]
 	}
 
-	if err := config.DB.Create(&po).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create PO"})
+	// Create map of selected item IDs for quick lookup
+	selectedItemsMap := make(map[uint]bool)
+	if len(req.ItemIDs) > 0 {
+		// Validate that all requested item IDs belong to this PR
+		for _, itemID := range req.ItemIDs {
+			if _, exists := prItemsMap[itemID]; !exists {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "PR item ID " + fmt.Sprint(itemID) + " does not belong to this PR"})
+				return
+			}
+			selectedItemsMap[itemID] = true
+		}
+	} else {
+		// If no items specified, select all PR items
+		for _, item := range pr.Items {
+			selectedItemsMap[item.ID] = true
+		}
+	}
+
+	// Check if there are any valid items to create PO
+	validItemCount := 0
+	for _, item := range pr.Items {
+		if selectedItemsMap[item.ID] {
+			validItemCount++
+		}
+	}
+
+	// If no items to create, return error immediately
+	if validItemCount == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no valid items to create PO"})
 		return
 	}
 
-	// Create PO items with auto-calculated total price
-	for _, item := range req.POItems {
-		requiredDate, _ := time.Parse("2006-01-02", item.RequiredDate)
-		// Calculate total price automatically
-		totalPrice := CalculateTotalPrice(item.Quantity, item.PricePerUnit, item.Discount, item.DiscountUnit)
-		poItem := models.POItem{
-			POID:         po.ID,
-			ItemName:     item.ItemName,
-			Description:  item.Description,
-			Quantity:     item.Quantity,
-			Unit:         item.Unit,
-			PricePerUnit: item.PricePerUnit,
-			Discount:     item.Discount,
-			DiscountUnit: item.DiscountUnit,
-			TotalPrice:   totalPrice,
-			RequiredDate: requiredDate,
-		}
-		config.DB.Create(&poItem)
-	}
+	dueDate, _ := time.Parse("2006-01-02", req.DueDate)
 
-	// Create vendor snapshot for data consistency
-	vendorSnapshotData, _ := json.Marshal(vendor)
-	vendorSnapshot := models.VendorSnapshot{
-		POID:          po.ID,
-		VendorID:      vendor.ID,
-		VendorName:    vendor.Name,
-		VendorAddress: vendor.Address,
-		VendorTaxID:   vendor.TaxID,
-		SnapshotData:  vendorSnapshotData,
+	// Use transaction to create PO, PO items, and vendor snapshot together
+	var po models.PurchaseOrder
+	var poCreationErr error
+	poCreationErr = config.DB.Transaction(func(tx *gorm.DB) error {
+		// Create PO
+		po = models.PurchaseOrder{
+			PONumber:  "PO_" + time.Now().Format("20060102150405"),
+			PRID:      req.PRID,
+			VendorID:  req.VendorID,
+			Status:    models.POStatusDraft,
+			CreditDay: req.CreditDay,
+			DueDate:   dueDate,
+		}
+
+		if err := tx.Create(&po).Error; err != nil {
+			return err
+		}
+
+		// Create PO items from selected PR items
+		itemsCreated := 0
+		for _, prItem := range pr.Items {
+			if !selectedItemsMap[prItem.ID] {
+				continue // Skip items not in selection
+			}
+			// Calculate total price automatically
+			totalPrice := CalculateTotalPrice(prItem.Quantity, prItem.PricePerUnit, prItem.Discount, prItem.DiscountUnit)
+			poItem := models.POItem{
+				POID:         po.ID,
+				ItemName:     prItem.ItemName,
+				Description:  prItem.Description,
+				Quantity:     prItem.Quantity,
+				Unit:         prItem.Unit,
+				PricePerUnit: prItem.PricePerUnit,
+				Discount:     prItem.Discount,
+				DiscountUnit: prItem.DiscountUnit,
+				TotalPrice:   totalPrice,
+				RequiredDate: prItem.RequiredDate,
+			}
+			if err := tx.Create(&poItem).Error; err != nil {
+				return err
+			}
+			itemsCreated++
+		}
+
+		// If no items were created, rollback transaction
+		if itemsCreated == 0 {
+			return fmt.Errorf("no PO items created")
+		}
+
+		// Create vendor snapshot for data consistency
+		vendorSnapshotData, _ := json.Marshal(vendor)
+		vendorSnapshot := models.VendorSnapshot{
+			POID:          po.ID,
+			VendorID:      vendor.ID,
+			VendorName:    vendor.Name,
+			VendorAddress: vendor.Address,
+			VendorTaxID:   vendor.TaxID,
+			SnapshotData:  vendorSnapshotData,
+		}
+		if err := tx.Create(&vendorSnapshot).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if poCreationErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create PO and items: " + poCreationErr.Error()})
+		return
 	}
-	config.DB.Create(&vendorSnapshot)
 
 	// Reload PO with items
 	config.DB.Preload("Items").First(&po, po.ID)
