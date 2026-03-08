@@ -2,23 +2,25 @@ package handlers
 
 import (
 	"net/http"
+
 	"github.com/core-procurement/inventory-service/config"
 	"github.com/core-procurement/inventory-service/models"
 	"github.com/gin-gonic/gin"
 )
 
 type ViewInventory struct {
-	ID          uint    `json:"id"`
-	Sku         string  `json:"sku"`
-	Name        string  `json:"name"`
-	Description string  `json:"description"`
+	ID          uint   `json:"id"`
+	Sku         string `json:"sku"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Quantity    int    `json:"quantity"`
 }
 
 type inventoryInput struct {
-	Sku         string  `json:"sku"`
-	Name        string  `json:"name"`
-	Description string  `json:"description"`
-	Quantity    int     `json:"quantity"`
+	Sku         string `json:"sku"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Quantity    int    `json:"quantity"`
 }
 
 func CreateInventory(c *gin.Context) {
@@ -109,6 +111,7 @@ func GetInventoryList(c *gin.Context) {
 				Sku:         inv.Sku,
 				Name:        inv.Name,
 				Description: inv.Description,
+				Quantity:    inv.Quantity,
 			})
 		}
 	}

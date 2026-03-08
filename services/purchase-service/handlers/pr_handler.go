@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/core-procurement/purchase-service/config"
@@ -13,10 +14,11 @@ import (
 	"github.com/core-procurement/purchase-service/models"
 	"github.com/core-procurement/purchase-service/utils"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type CreatePRRequest struct {
-	PRNumber   string                `json:"pr_number" binding:"required"`
+	PRNumber   string                `json:"pr_number"`
 	Department string                `json:"department" binding:"required"`
 	Items      []CreatePRItemRequest `json:"items" binding:"required"`
 }
@@ -37,7 +39,90 @@ type UpdatePRRequest struct {
 	Items      []CreatePRItemRequest `json:"items"`
 }
 
-// CreatePR creates a new Purchase Request in DRAFT status
+// GeneratePRNumber generates a unique PR number based on PR ID and timestamp
+// Format: PR-YYYYMMDD-{PRID:06d}
+func GeneratePRNumber(prID uint) string {
+	timestamp := time.Now().Format("20060102")
+	return fmt.Sprintf("PR-%s-%06d", timestamp, prID)
+}
+
+// CheckAndCreatePRItems checks inventory for each item and creates PR items only for insufficient stock
+// Requires authToken for Inventory Service authentication
+// Returns:
+// - items to create with adjusted quantities
+// - inventory check details for response
+func CheckAndCreatePRItems(pr *models.PurchaseRequest, items []CreatePRItemRequest, authToken string) ([]models.PRItem, map[string]interface{}, error) {
+	itemNames := make([]string, len(items))
+	for i, item := range items {
+		itemNames[i] = item.ItemName
+	}
+
+	log.Printf("Checking inventory for PR with items: %v", itemNames)
+	stockCheckResults := utils.CheckInventoryStock(itemNames, authToken)
+
+	inventoryCheckDetails := make(map[string]interface{})
+	var prItemsToCreate []models.PRItem
+
+	for _, item := range items {
+		checkResult := stockCheckResults[item.ItemName]
+		availableQty := checkResult.AvailableQty
+
+		// Calculate quantity needed for PR
+		var prQuantity int
+		var status string
+		log.Printf("Inventory check for item '%s': requested %d, available %d", item.ItemName, item.Quantity, availableQty)
+		if checkResult.Error != "" {
+			// Item not found in inventory, create PR for full quantity
+			prQuantity = item.Quantity
+			status = "not found in inventory, creating PR for full quantity"
+			log.Printf("Item %s not found in inventory. Creating PR for %d units", item.ItemName, prQuantity)
+		} else if availableQty >= item.Quantity {
+			// Enough stock available, don't create PR item
+			prQuantity = 0
+			status = fmt.Sprintf("sufficient stock (%d units available)", availableQty)
+			log.Printf("Item %s has sufficient stock (%d available >= %d needed)", item.ItemName, availableQty, item.Quantity)
+		} else {
+			// Insufficient stock, create PR for the shortage
+			prQuantity = item.Quantity - availableQty
+			status = fmt.Sprintf("insufficient stock (%d available), creating PR for shortage of %d units", availableQty, prQuantity)
+			log.Printf("Item %s has insufficient stock (%d available < %d needed). Creating PR for %d units", item.ItemName, availableQty, item.Quantity, prQuantity)
+		}
+
+		// Add to inventory check details
+		inventoryCheckDetails[item.ItemName] = gin.H{
+			"requested_qty":  item.Quantity,
+			"available_qty":  availableQty,
+			"pr_qty_created": prQuantity,
+			"status":         status,
+		}
+
+		// Only create PR item if quantity > 0
+		if prQuantity > 0 {
+			requiredDate, _ := time.Parse("2006-01-02", item.RequiredDate)
+			// Calculate total price automatically based on PR quantity (not requested quantity)
+			totalPrice := CalculateTotalPrice(prQuantity, item.PricePerUnit, item.Discount, item.DiscountUnit)
+			prItem := models.PRItem{
+				PRID:         pr.ID,
+				ItemName:     item.ItemName,
+				Description:  item.Description,
+				Quantity:     prQuantity,
+				Unit:         item.Unit,
+				PricePerUnit: item.PricePerUnit,
+				Discount:     item.Discount,
+				DiscountUnit: item.DiscountUnit,
+				TotalPrice:   totalPrice,
+				RequiredDate: requiredDate,
+			}
+			prItemsToCreate = append(prItemsToCreate, prItem)
+		}
+	}
+
+	return prItemsToCreate, inventoryCheckDetails, nil
+}
+
+// CreatePR creates a new Purchase Request in DRAFT status with transaction
+// Now includes inventory checking and only creates PR items for insufficient stock
+// If no items are created, the PR will not be created (transaction rollback)
 func CreatePR(c *gin.Context) {
 	var req CreatePRRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -47,48 +132,89 @@ func CreatePR(c *gin.Context) {
 
 	userID, _ := c.Get("user_id")
 
-	pr := models.PurchaseRequest{
-		PRNumber:    req.PRNumber,
+	// Get JWT token from Authorization header for inventory service calls
+	authToken := c.GetHeader("Authorization")
+	authToken = strings.TrimPrefix(authToken, "Bearer ")
+
+	// Check inventory and determine which items need PR BEFORE creating PR
+	tempPR := models.PurchaseRequest{
 		RequesterID: userID.(uint),
 		Department:  req.Department,
 		Status:      models.PRStatusDraft,
 	}
-
-	if err := config.DB.Create(&pr).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create PR"})
+	prItemsToCreate, inventoryCheckDetails, err := CheckAndCreatePRItems(&tempPR, req.Items, authToken)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check inventory"})
 		return
 	}
 
-	// Create PR items with auto-calculated total price
-	for _, item := range req.Items {
-		requiredDate, _ := time.Parse("2006-01-02", item.RequiredDate)
-		// Calculate total price automatically
-		totalPrice := CalculateTotalPrice(item.Quantity, item.PricePerUnit, item.Discount, item.DiscountUnit)
-		prItem := models.PRItem{
-			PRID:         pr.ID,
-			ItemName:     item.ItemName,
-			Description:  item.Description,
-			Quantity:     item.Quantity,
-			Unit:         item.Unit,
-			PricePerUnit: item.PricePerUnit,
-			Discount:     item.Discount,
-			DiscountUnit: item.DiscountUnit,
-			TotalPrice:   totalPrice,
-			RequiredDate: requiredDate,
+	// Validate that there are items to create
+	if len(prItemsToCreate) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":                     "no items to create PR - all items have sufficient stock",
+			"inventory_check_summary":   inventoryCheckDetails,
+			"total_items_requested":     len(req.Items),
+			"items_with_sufficient_qty": len(req.Items),
+		})
+		return
+	}
+
+	// Use transaction to ensure PR and PR items are created together
+	var pr models.PurchaseRequest
+	err = config.DB.Transaction(func(tx *gorm.DB) error {
+		// Create PR with provided PR number or empty (will be auto-generated)
+		pr = models.PurchaseRequest{
+			PRNumber:    req.PRNumber,
+			RequesterID: userID.(uint),
+			Department:  req.Department,
+			Status:      models.PRStatusDraft,
 		}
-		config.DB.Create(&prItem)
+
+		if err := tx.Create(&pr).Error; err != nil {
+			return err
+		}
+
+		// If PR number was not provided, generate one based on PR ID
+		if req.PRNumber == "" {
+			pr.PRNumber = GeneratePRNumber(pr.ID)
+			if err := tx.Save(&pr).Error; err != nil {
+				return err
+			}
+			log.Printf("Generated PR number: %s for PR ID: %d", pr.PRNumber, pr.ID)
+		}
+
+		// Create PR items with correct PR ID
+		for _, prItem := range prItemsToCreate {
+			prItem.PRID = pr.ID
+			if err := tx.Create(&prItem).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create PR and items"})
+		return
 	}
 
 	// Reload PR with items
 	config.DB.Preload("Items").First(&pr, pr.ID)
 
 	c.JSON(http.StatusCreated, gin.H{
-		"message": "PR created successfully",
-		"data":    pr,
+		"message":                   "PR created successfully",
+		"data":                      pr,
+		"inventory_check_summary":   inventoryCheckDetails,
+		"pr_items_created_count":    len(prItemsToCreate),
+		"total_items_requested":     len(req.Items),
+		"items_with_sufficient_qty": len(req.Items) - len(prItemsToCreate),
 	})
 }
 
-// UpdatePR updates PR (only possible in DRAFT status)
+// UpdatePR updates PR (only possible in DRAFT status) with transaction support
+// Now includes inventory checking and only updates PR items for insufficient stock
+// If no items are created, the update will be rolled back
 func UpdatePR(c *gin.Context) {
 	prID := c.Param("id")
 
@@ -97,6 +223,10 @@ func UpdatePR(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	// Get JWT token from Authorization header for inventory service calls
+	authToken := c.GetHeader("Authorization")
+	authToken = strings.TrimPrefix(authToken, "Bearer ")
 
 	var pr models.PurchaseRequest
 	if err := config.DB.First(&pr, prID).Error; err != nil {
@@ -110,44 +240,85 @@ func UpdatePR(c *gin.Context) {
 		return
 	}
 
-	// Update department
-	if req.Department != "" {
-		pr.Department = req.Department
-	}
-
-	config.DB.Save(&pr)
-
-	// Delete old items and create new ones
+	// If items are being updated, validate before transaction
 	if len(req.Items) > 0 {
-		config.DB.Where("pr_id = ?", pr.ID).Delete(&models.PRItem{})
-
-		for _, item := range req.Items {
-			requiredDate, _ := time.Parse("2006-01-02", item.RequiredDate)
-			// Calculate total price automatically
-			totalPrice := CalculateTotalPrice(item.Quantity, item.PricePerUnit, item.Discount, item.DiscountUnit)
-			prItem := models.PRItem{
-				PRID:         pr.ID,
-				ItemName:     item.ItemName,
-				Description:  item.Description,
-				Quantity:     item.Quantity,
-				Unit:         item.Unit,
-				PricePerUnit: item.PricePerUnit,
-				Discount:     item.Discount,
-				DiscountUnit: item.DiscountUnit,
-				TotalPrice:   totalPrice,
-				RequiredDate: requiredDate,
-			}
-			config.DB.Create(&prItem)
+		// Check inventory and determine which items need PR BEFORE using transaction
+		tempPR := models.PurchaseRequest{ID: pr.ID}
+		prItemsToCreate, inventoryCheckDetails, err := CheckAndCreatePRItems(&tempPR, req.Items, authToken)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check inventory"})
+			return
 		}
+
+		// Validate that there are items to create
+		if len(prItemsToCreate) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":                     "no items to update PR - all items have sufficient stock",
+				"inventory_check_summary":   inventoryCheckDetails,
+				"total_items_requested":     len(req.Items),
+				"items_with_sufficient_qty": len(req.Items),
+			})
+			return
+		}
+
+		// Use transaction to ensure department update and items are created together
+		var updatedPR models.PurchaseRequest
+		err = config.DB.Transaction(func(tx *gorm.DB) error {
+			// Update department
+			if req.Department != "" {
+				pr.Department = req.Department
+				if err := tx.Save(&pr).Error; err != nil {
+					return err
+				}
+			}
+
+			// Delete old items
+			if err := tx.Where("pr_id = ?", pr.ID).Delete(&models.PRItem{}).Error; err != nil {
+				return err
+			}
+
+			// Create new PR items
+			for _, prItem := range prItemsToCreate {
+				prItem.PRID = pr.ID
+				if err := tx.Create(&prItem).Error; err != nil {
+					return err
+				}
+			}
+
+			return nil
+		})
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update PR and items"})
+			return
+		}
+
+		// Reload PR with items
+		config.DB.Preload("Items").First(&updatedPR, pr.ID)
+
+		c.JSON(http.StatusOK, gin.H{
+			"message":                   "PR updated successfully",
+			"data":                      updatedPR,
+			"inventory_check_summary":   inventoryCheckDetails,
+			"pr_items_created_count":    len(prItemsToCreate),
+			"total_items_requested":     len(req.Items),
+			"items_with_sufficient_qty": len(req.Items) - len(prItemsToCreate),
+		})
+	} else {
+		// Update department only
+		if req.Department != "" {
+			pr.Department = req.Department
+			config.DB.Save(&pr)
+		}
+
+		// Reload PR with items
+		config.DB.Preload("Items").First(&pr, pr.ID)
+
+		c.JSON(http.StatusOK, gin.H{
+			"message": "PR updated successfully",
+			"data":    pr,
+		})
 	}
-
-	// Reload PR with items
-	config.DB.Preload("Items").First(&pr, pr.ID)
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "PR updated successfully",
-		"data":    pr,
-	})
 }
 
 // GetPR retrieves a PR by ID
@@ -183,13 +354,13 @@ func GetPRList(c *gin.Context) {
 	c.JSON(http.StatusOK, prs)
 }
 
-// SubmitPR submits PR for approval with full validation and inventory checks
+// SubmitPR submits PR for approval
 // Workflow:
 // 1. Validate Data: Check that items exist and have required fields
-// 2. Check Inventory Availability: Query Inventory Service for current stock levels
-// 3. Take Inventory Snapshot: Capture current stock state in PR Items
-// 4. Change Status: Update PR status from DRAFT to PENDING
-// 5. Trigger Approval: Generate workflow ID and publish PR_READY_FOR_APPROVAL event
+// 2. Create Inventory Snapshot: Capture current state of PR items for audit
+// 3. Change Status: Update PR status from DRAFT to PENDING
+// 4. Trigger Approval: Generate workflow ID and publish PR_READY_FOR_APPROVAL event
+// Note: Inventory checking is now done in CreatePR/UpdatePR, not here
 func SubmitPR(c *gin.Context) {
 	prID := c.Param("id")
 
@@ -230,50 +401,7 @@ func SubmitPR(c *gin.Context) {
 		return
 	}
 
-	// Step 2: Check Inventory Availability
-	itemNames := make([]string, len(pr.Items))
-	for i, item := range pr.Items {
-		itemNames[i] = item.ItemName
-	}
-
-	log.Printf("Checking inventory for PR %d with items: %v", pr.ID, itemNames)
-	stockCheckResults := utils.CheckInventoryStock(itemNames)
-
-	// Collect inventory check details for response
-	inventoryCheckDetails := make(map[string]interface{})
-	hasErrors := false
-
-	for itemName, checkResult := range stockCheckResults {
-		if checkResult.Error != "" {
-			log.Printf("Stock check warning for item %s: %s", itemName, checkResult.Error)
-			inventoryCheckDetails[itemName] = gin.H{
-				"available_qty": checkResult.AvailableQty,
-				"warning":       checkResult.Error,
-			}
-			hasErrors = true // Warning but continue processing
-		} else {
-			inventoryCheckDetails[itemName] = gin.H{
-				"available_qty": checkResult.AvailableQty,
-				"checked_at":    checkResult.CheckedAt,
-			}
-		}
-	}
-
-	// Step 3: Take Inventory Snapshot - Update PR Items with current stock info
-	now := time.Now()
-	for i := range pr.Items {
-		itemName := pr.Items[i].ItemName
-		if result, exists := stockCheckResults[itemName]; exists {
-			pr.Items[i].CurrentStockAtSubmit = result.AvailableQty
-			pr.Items[i].StockCheckAt = now
-		}
-		// Save updated item
-		if err := config.DB.Model(&pr.Items[i]).Updates(pr.Items[i]).Error; err != nil {
-			log.Printf("failed to update PR item with stock info: %v", err)
-		}
-	}
-
-	// Create inventory snapshot with all PR items
+	// Step 2: Create Inventory Snapshot - for audit trail
 	snapshotData, _ := json.Marshal(pr.Items)
 	snapshot := models.InventorySnapshot{
 		PRID:         pr.ID,
@@ -287,7 +415,7 @@ func SubmitPR(c *gin.Context) {
 
 	log.Printf("Created inventory snapshot for PR %d", pr.ID)
 
-	// Step 4: Change Status to PENDING
+	// Step 3: Change Status to PENDING
 	pr.Status = models.PRStatusPending
 	// Generate workflow ID with timestamp
 	pr.WorkflowID = "WF_" + strconv.FormatUint(uint64(pr.ID), 10) + "_" + time.Now().Format("20060102150405")
@@ -300,7 +428,7 @@ func SubmitPR(c *gin.Context) {
 
 	log.Printf("Updated PR %d status to PENDING with WorkflowID: %s", pr.ID, pr.WorkflowID)
 
-	// Step 5: Trigger Approval by publishing event
+	// Step 4: Trigger Approval by publishing event
 	event := messaging.PRReadyForApprovalEvent{
 		PRID:        pr.ID,
 		PRNumber:    pr.PRNumber,
@@ -334,12 +462,10 @@ func SubmitPR(c *gin.Context) {
 
 	log.Printf("Published PR_READY_FOR_APPROVAL event for PR %d", pr.ID)
 
-	// Return success response with inventory check details
+	// Return success response
 	c.JSON(http.StatusOK, gin.H{
 		"message":                  "PR submitted successfully",
 		"data":                     pr,
-		"inventory_check_summary":  inventoryCheckDetails,
-		"has_inventory_warnings":   hasErrors,
 		"snapshot_created":         true,
 		"workflow_id":              pr.WorkflowID,
 		"approval_event_published": true,
