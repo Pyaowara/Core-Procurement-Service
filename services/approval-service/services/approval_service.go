@@ -137,7 +137,7 @@ func GetApprovalInstanceByWorkflowID(workflowID string) (*models.ApprovalInstanc
 func VerifyApprovalRole(userRole string, requiredApprovalRole models.ApprovalRole) bool {
 	// Map user roles to approval roles
 	// User roles: Employee, Manager, PurchaseOfficer, Executive, Admin
-	// Approval roles: PR_CREATOR, DEPARTMENT_HEAD, PROCUREMENT, EXECUTIVE
+	// Approval roles: Employee, Manager, PurchaseOfficer, EXECUTIVE
 
 	roleMapping := map[models.ApprovalRole][]string{
 		models.ApprovalRolePRCreator:      {"Employee", "Manager", "PurchaseOfficer", "Executive", "Admin"}, // Anyone can be requester
