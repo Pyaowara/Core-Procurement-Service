@@ -4,15 +4,22 @@
 
 The **Approval Service** manages approval workflows for Purchase Requests (PR) using a fixed 4-step sequence.
 
-It supports two integration modes:
-- Manual creation via HTTP: `POST /approvals`
+It supports automatic creation via RabbitMQ event when PR is submitted:
 - Automatic creation via RabbitMQ event: `pr.ready.for.approval`
 
 ## Base URL
 
+Direct:
 ```text
 http://localhost:6770
 ```
+
+Via API Gateway:
+```text
+http://localhost:8080/api/approval
+```
+
+All endpoints below can be accessed through either URL.
 
 ## Technology Stack
 
@@ -28,10 +35,10 @@ http://localhost:6770
 The service uses this fixed sequence:
 
 ```text
-1. PR_CREATOR
-2. DEPARTMENT_HEAD
-3. PROCUREMENT
-4. EXECUTIVE
+1. Employee
+2. Manager
+3. PurchaseOfficer
+4. Executive
 ```
 
 Workflow status transitions:
@@ -51,10 +58,10 @@ The approval service enforces role-based validation on all approval/rejection en
 
 | Approval Step | Required Role | Allowed User Roles |
 |---|---|---|
-| Step 1 (PR_CREATOR) | PR_CREATOR | Employee, Manager, PurchaseOfficer, Executive, Admin |
-| Step 2 (DEPARTMENT_HEAD) | DEPARTMENT_HEAD | Manager, Executive, Admin |
-| Step 3 (PROCUREMENT) | PROCUREMENT | PurchaseOfficer, Executive, Admin |
-| Step 4 (EXECUTIVE) | EXECUTIVE | Executive, Admin |
+| Step 1 (Employee) | Employee | Employee, Manager, PurchaseOfficer, Executive, Admin |
+| Step 2 (Manager) | Manager | Manager, Executive, Admin |
+| Step 3 (PurchaseOfficer) | PurchaseOfficer | PurchaseOfficer, Executive, Admin |
+| Step 4 (Executive) | Executive | Executive, Admin |
 
 ### Behavior
 
@@ -97,7 +104,7 @@ Notes:
   "instance_id": 1,
   "step_order": 1,
   "approver_id": 100,
-  "role": "PR_CREATOR",
+  "role": "Employee",
   "status": "APPROVED",
   "action_at": "2026-03-08T12:05:31Z",
   "created_at": "2026-03-08T12:05:31Z",
@@ -107,7 +114,7 @@ Notes:
 
 Notes:
 - `approver_id` defaults to `0` in role-based mode for pending steps.
-- On PR submit flow, step 1 (`PR_CREATOR`) is auto-approved by requester.
+- On PR submit flow, step 1 (`Employee`) is auto-approved by requester.
 - Current implementation does not enforce role from JWT in service logic yet.
 
 ### ApprovalAction
@@ -143,48 +150,23 @@ Response:
 
 ---
 
-### 2. Create Approval (Manual)
+### 2. Get Approval by Entity
 
-`POST /approvals`
-
-Request:
-
-```json
-{
-  "entity_type": "PR",
-  "entity_id": 42,
-  "created_by": 100,
-  "workflow_id": "WF_42_20260308120530"
-}
-```
-
-Required fields:
-- `entity_type`
-- `entity_id`
-- `created_by`
-- `workflow_id`
-
-Response: `201 Created` with full instance payload.
-
----
-
-### 3. Get Approval by Entity
-
-`GET /approvals/:entity_type/:entity_id`
+`GET /:entity_type/:entity_id`
 
 Example:
 
 ```text
-GET /approvals/PR/42
+GET /PR/42
 ```
 
 Response: `200 OK` with full instance payload.
 
 ---
 
-### 4. Approve Current Step by Instance ID
+### 3. Approve Current Step by Instance ID
 
-`POST /approvals/:id/approve`
+`POST /:id/approve`
 
 Request:
 
@@ -202,10 +184,10 @@ Optional: the request body can be empty `{}` or omitted entirely.
 - No need to specify `actor_id` in body
 
 **Role Requirements:**
-- Step 1 (PR_CREATOR): Any user can approve (auto-approved on submit)
-- Step 2 (DEPARTMENT_HEAD): Manager, Executive, or Admin role
-- Step 3 (PROCUREMENT): PurchaseOfficer, Executive, or Admin role
-- Step 4 (EXECUTIVE): Executive or Admin role
+- Step 1 (Employee): Any user can approve (auto-approved on submit)
+- Step 2 (Manager): Manager, Executive, or Admin role
+- Step 3 (PurchaseOfficer): PurchaseOfficer, Executive, or Admin role
+- Step 4 (Executive): Executive or Admin role
 
 Response: `200 OK` with updated instance.
 
@@ -215,9 +197,9 @@ Response: `200 OK` with updated instance.
 
 ---
 
-### 5. Reject Current Step by Instance ID
+### 4. Reject Current Step by Instance ID
 
-`POST /approvals/:id/reject`
+`POST /:id/reject`
 
 Request:
 
@@ -235,10 +217,10 @@ Optional: the request body can be empty `{}` or omitted entirely.
 - No need to specify `actor_id` in body
 
 **Role Requirements:**
-- Step 1 (PR_CREATOR): Any user can reject (rarely used—step 1 is auto-approved)
-- Step 2 (DEPARTMENT_HEAD): Manager, Executive, or Admin role
-- Step 3 (PROCUREMENT): PurchaseOfficer, Executive, or Admin role
-- Step 4 (EXECUTIVE): Executive or Admin role
+- Step 1 (Employee): Any user can reject (rarely used—step 1 is auto-approved)
+- Step 2 (Manager): Manager, Executive, or Admin role
+- Step 3 (PurchaseOfficer): PurchaseOfficer, Executive, or Admin role
+- Step 4 (Executive): Executive or Admin role
 
 Response: `200 OK` with updated instance.
 
@@ -248,23 +230,23 @@ Response: `200 OK` with updated instance.
 
 ---
 
-### 6. Get Approval by Workflow ID
+### 5. Get Approval by Workflow ID
 
-`GET /approvals/workflow/:workflow_id`
+`GET /workflows/:workflow_id`
 
 Example:
 
 ```text
-GET /approvals/workflow/WF_42_20260308120530
+GET /workflows/WF_42_20260308120530
 ```
 
 Response: `200 OK` with full instance payload.
 
 ---
 
-### 7. Approve by Workflow ID
+### 6. Approve by Workflow ID
 
-`POST /approvals/workflow/:workflow_id/approve`
+`POST /workflows/:workflow_id/approve`
 
 Request:
 
@@ -282,7 +264,7 @@ Optional: the request body can be empty `{}` or omitted entirely.
 - No need to specify `actor_id` in body
 
 **Role-Based Access:**
-See role requirements in endpoint 4 (Approve Current Step by Instance ID).
+See role requirements in endpoint 3 (Approve Current Step by Instance ID).
 
 Response: `200 OK` with updated instance.
 
@@ -292,9 +274,9 @@ Response: `200 OK` with updated instance.
 
 ---
 
-### 8. Reject by Workflow ID
+### 7. Reject by Workflow ID
 
-`POST /approvals/workflow/:workflow_id/reject`
+`POST /workflows/:workflow_id/reject`
 
 Request:
 
@@ -312,7 +294,7 @@ Optional: the request body can be empty `{}` or omitted entirely.
 - No need to specify `actor_id` in body
 
 **Role-Based Access:**
-See role requirements in endpoint 5 (Reject Current Step by Instance ID).
+See role requirements in endpoint 4 (Reject Current Step by Instance ID).
 
 Response: `200 OK` with updated instance.
 
@@ -339,9 +321,9 @@ Rejecting a workflow immediately stops the approval process:
 
 **Example Flow:**
 ```
-1. PR submitted → Step 1 (PR_CREATOR) auto-approved
-2. current_step = 2 (DEPARTMENT_HEAD pending)
-3. Reject at step 2 → entire workflow REJECTED
+1. PR submitted -> Step 1 (Employee) auto-approved
+2. current_step = 2 (Manager pending)
+3. Reject at step 2 -> entire workflow REJECTED
 4. Steps 3 & 4 never evaluated
 ```
 
@@ -378,8 +360,8 @@ Payload:
 Behavior:
 - Approval Service consumes the event.
 - If no workflow exists for that PR, it auto-creates one with 4 steps.
-- Step 1 (`PR_CREATOR`) is auto-approved when the workflow is created from PR submit.
-- Workflow starts waiting at step 2 (`DEPARTMENT_HEAD`).
+- Step 1 (`Employee`) is auto-approved when the workflow is created from PR submit.
+- Workflow starts waiting at step 2 (`Manager`).
 - `workflow_id` from event is saved in `approval_instances.workflow_id`.
 
 ### Published Events (Outgoing)
@@ -407,7 +389,7 @@ Behavior:
 ```
 
 Note:
-- Current code emits `workflow_id` in published events as `approval-{instance_id}`.
+- `workflow_id` in published events is the same as the workflow ID received from Purchase Service (correlation ID).
 
 ---
 
@@ -478,7 +460,7 @@ Wait 2-3 seconds for async consumer.
 
 ### Step 4: Verify Workflow Created
 
-`GET {{approval_url}}/approvals/workflow/{{workflow_id}}`
+`GET {{approval_url}}/workflows/{{workflow_id}}`
 
 Expect:
 - `status = PENDING`
@@ -486,18 +468,17 @@ Expect:
 - 4 steps exist
 
 Also expect:
-- step 1 (`PR_CREATOR`) is already `APPROVED`
-- first pending step is step 2 (`DEPARTMENT_HEAD`)
+- step 1 (`Employee`) is already `APPROVED`
+- first pending step is step 2 (`Manager`)
 
 ### Step 5-7: Approve Remaining 3 Steps
 
 Repeat 3 times:
 
-`POST {{approval_url}}/approvals/workflow/{{workflow_id}}/approve`
+`POST {{approval_url}}/workflows/{{workflow_id}}/approve`
 
 ```json
 {
-  "actor_id": {{user_id}},
   "comment": "Approved"
 }
 ```

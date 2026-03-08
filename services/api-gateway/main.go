@@ -53,8 +53,14 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(stripped, "/inventory"), strings.HasPrefix(stripped, "/dep"):
 		g.inventoryProxy.ServeHTTP(w, r)
 	case strings.HasPrefix(stripped, "/purchase"):
+		// Remove /purchase prefix before proxying
+		r.URL.Path = strings.TrimPrefix(r.URL.Path, "/purchase")
+		r.URL.RawPath = strings.TrimPrefix(r.URL.RawPath, "/purchase")
 		g.purchaseProxy.ServeHTTP(w, r)
 	case strings.HasPrefix(stripped, "/approval"):
+		// Remove /approval prefix before proxying
+		r.URL.Path = strings.TrimPrefix(r.URL.Path, "/approval")
+		r.URL.RawPath = strings.TrimPrefix(r.URL.RawPath, "/approval")
 		g.approvalProxy.ServeHTTP(w, r)
 	default:
 		http.NotFound(w, r)

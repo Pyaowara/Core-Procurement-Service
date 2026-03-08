@@ -134,6 +134,7 @@ services:
       PORT: "6769"
       DB_DSN: "host=purchase-db user=${POSTGRES_USER:-postgres} password=${POSTGRES_PASSWORD:-postgres} dbname=purchase_db port=5432 sslmode=disable"
       JWT_SECRET: "${JWT_SECRET:-super-secret-jwt-key-change-me}"
+      RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"
     depends_on:
       purchase-db:
         condition: service_healthy
@@ -150,6 +151,7 @@ services:
       PORT: "6770"
       DB_DSN: "host=approval-db user=${POSTGRES_USER:-postgres} password=${POSTGRES_PASSWORD:-postgres} dbname=approval_db port=5432 sslmode=disable"
       JWT_SECRET: "${JWT_SECRET:-super-secret-jwt-key-change-me}"
+      RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"
     depends_on:
       approval-db:
         condition: service_healthy
