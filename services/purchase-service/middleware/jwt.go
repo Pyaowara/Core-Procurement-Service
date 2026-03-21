@@ -69,8 +69,8 @@ func AuthRequired() gin.HandlerFunc {
 	}
 }
 
-// EmployeeCanCreatePR allows Employee, Manager, and Admin to create PR
-func EmployeeCanCreatePR() gin.HandlerFunc {
+// EmployeeRequired allows Employee, Manager, and Admin to create PR
+func EmployeeRequired() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenString, err := c.Cookie("token")
 		if err != nil || tokenString == "" {
@@ -108,8 +108,8 @@ func EmployeeCanCreatePR() gin.HandlerFunc {
 	}
 }
 
-// PurchaseOfficerCanCreatePO allows PurchaseOfficer and Admin to create PO
-func PurchaseOfficerCanCreatePO() gin.HandlerFunc {
+// PurchaseOfficerRequired allows PurchaseOfficer and Admin to create PO
+func PurchaseOfficerRequired() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenString, err := c.Cookie("token")
 		if err != nil || tokenString == "" {
@@ -147,8 +147,8 @@ func PurchaseOfficerCanCreatePO() gin.HandlerFunc {
 	}
 }
 
-// ManagerCanManageGoods allows Manager, PurchaseOfficer, and Admin to manage goods
-func ManagerCanManageGoods() gin.HandlerFunc {
+// ManagerRequired allows Manager, PurchaseOfficer, and Admin to manage goods
+func ManagerRequired() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenString, err := c.Cookie("token")
 		if err != nil || tokenString == "" {

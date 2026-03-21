@@ -17,29 +17,29 @@ const (
 
 type PurchaseOrder struct {
 	gorm.Model
-	ID             uint     `gorm:"primaryKey"`
-	PONumber       string   `gorm:"unique;not null"`
-	PRID           uint     `gorm:"not null;index"`
-	VendorID       uint     `gorm:"not null;index"`
-	Status         POStatus `gorm:"type:varchar(20);default:'DRAFT'"`
-	CreditDay      int      `gorm:"default:0"`
-	DueDate        time.Time
-	Items          []POItem        `gorm:"foreignKey:POID"`
-	VendorSnapshot *VendorSnapshot `gorm:"foreignKey:POID"`
-	IsDeleted      bool            `gorm:"default:false"`
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	DeletedAt      gorm.DeletedAt `gorm:"index"`
+	ID        uint     `gorm:"primaryKey"`
+	PONumber  string   `gorm:"unique;not null"`
+	PRID      uint     `gorm:"not null;index"`
+	VendorID  uint     `gorm:"not null;index"`
+	Purpose   string   `gorm:"type:text"` // Purpose of the purchase order
+	Status    POStatus `gorm:"type:varchar(20);default:'DRAFT'"`
+	CreditDay int      `gorm:"default:0"`
+	DueDate   time.Time
+	Items     []POItem `gorm:"foreignKey:POID"`
+	IsDeleted bool     `gorm:"default:false"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	DeletedAt gorm.DeletedAt `gorm:"index"`
 }
 
 type POItem struct {
 	gorm.Model
 	ID           uint   `gorm:"primaryKey"`
 	POID         uint   `gorm:"not null;index"`
+	SKU          string `gorm:"not null;index"` // Stock Keeping Unit
 	ItemName     string `gorm:"not null"`
 	Description  string
 	Quantity     int     `gorm:"not null"`
-	Unit         string  `gorm:"not null"`
 	PricePerUnit float64 `gorm:"type:decimal(15,2);not null"`
 	Discount     float64 `gorm:"type:decimal(15,2)"`
 	DiscountUnit string  `gorm:"type:varchar(10)"` // % or BAHT

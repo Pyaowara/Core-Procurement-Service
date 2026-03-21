@@ -123,15 +123,22 @@ func GeneratePO(c *gin.Context) {
 
 	dueDate, _ := time.Parse("2006-01-02", req.DueDate)
 
-	// Use transaction to create PO, PO items, and vendor snapshot together
+	// Use transaction to create PO and PO items together
 	var po models.PurchaseOrder
 	var poCreationErr error
 	poCreationErr = config.DB.Transaction(func(tx *gorm.DB) error {
+		// Get the PR info for Purpose
+		var pr models.PurchaseRequest
+		if err := tx.First(&pr, req.PRID).Error; err != nil {
+			return fmt.Errorf("failed to fetch PR: %v", err)
+		}
+
 		// Create PO
 		po = models.PurchaseOrder{
 			PONumber:  "PO_" + time.Now().Format("20060102150405"),
 			PRID:      req.PRID,
 			VendorID:  req.VendorID,
+			Purpose:   pr.Purpose,
 			Status:    models.POStatusDraft,
 			CreditDay: req.CreditDay,
 			DueDate:   dueDate,
@@ -151,10 +158,10 @@ func GeneratePO(c *gin.Context) {
 			totalPrice := CalculateTotalPrice(prItem.Quantity, prItem.PricePerUnit, prItem.Discount, prItem.DiscountUnit)
 			poItem := models.POItem{
 				POID:         po.ID,
+				SKU:          prItem.SKU,
 				ItemName:     prItem.ItemName,
 				Description:  prItem.Description,
 				Quantity:     prItem.Quantity,
-				Unit:         prItem.Unit,
 				PricePerUnit: prItem.PricePerUnit,
 				Discount:     prItem.Discount,
 				DiscountUnit: prItem.DiscountUnit,
@@ -170,20 +177,6 @@ func GeneratePO(c *gin.Context) {
 		// If no items were created, rollback transaction
 		if itemsCreated == 0 {
 			return fmt.Errorf("no PO items created")
-		}
-
-		// Create vendor snapshot for data consistency
-		vendorSnapshotData, _ := json.Marshal(vendor)
-		vendorSnapshot := models.VendorSnapshot{
-			POID:          po.ID,
-			VendorID:      vendor.ID,
-			VendorName:    vendor.Name,
-			VendorAddress: vendor.Address,
-			VendorTaxID:   vendor.TaxID,
-			SnapshotData:  vendorSnapshotData,
-		}
-		if err := tx.Create(&vendorSnapshot).Error; err != nil {
-			return err
 		}
 
 		return nil
@@ -204,16 +197,17 @@ func GeneratePO(c *gin.Context) {
 		PRID:       po.PRID,
 		VendorID:   po.VendorID,
 		VendorName: vendor.Name,
+		Purpose:    po.Purpose,
 		DueDate:    dueDate.Format("2006-01-02"),
 		Timestamp:  time.Now(),
 	}
 
 	for _, item := range po.Items {
 		event.Items = append(event.Items, messaging.POItemPayload{
+			SKU:          item.SKU,
 			ItemName:     item.ItemName,
 			Description:  item.Description,
 			Quantity:     item.Quantity,
-			Unit:         item.Unit,
 			PricePerUnit: item.PricePerUnit,
 			Discount:     item.Discount,
 			DiscountUnit: item.DiscountUnit,
@@ -284,7 +278,7 @@ func GetPO(c *gin.Context) {
 	poID := c.Param("id")
 
 	var po models.PurchaseOrder
-	if err := config.DB.Preload("Items").Preload("VendorSnapshot").First(&po, poID).Error; err != nil {
+	if err := config.DB.Preload("Items").First(&po, poID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "PO not found"})
 		return
 	}
