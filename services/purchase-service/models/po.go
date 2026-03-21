@@ -10,7 +10,6 @@ import (
 type POStatus string
 
 const (
-	POStatusDraft     POStatus = "DRAFT"
 	POStatusSent      POStatus = "SENT"
 	POStatusCompleted POStatus = "COMPLETED"
 )
@@ -22,7 +21,7 @@ type PurchaseOrder struct {
 	PRID      uint     `gorm:"not null;index"`
 	VendorID  uint     `gorm:"not null;index"`
 	Purpose   string   `gorm:"type:text"` // Purpose of the purchase order
-	Status    POStatus `gorm:"type:varchar(20);default:'DRAFT'"`
+	Status    POStatus `gorm:"type:varchar(20);default:'SENT'"`
 	CreditDay int      `gorm:"default:0"`
 	DueDate   time.Time
 	Items     []POItem `gorm:"foreignKey:POID"`

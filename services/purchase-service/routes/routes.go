@@ -36,9 +36,8 @@ func SetupRouter() *gin.Engine {
 		po.POST("", middleware.PurchaseOfficerRequired(), handlers.GeneratePO)
 		po.GET("", middleware.AuthRequired(), handlers.GetPOList)
 		po.GET("/:id", middleware.AuthRequired(), handlers.GetPO)
-		po.PUT("/:id", middleware.PurchaseOfficerRequired(), handlers.UpdatePOStatus)
+		po.PUT("/:id", middleware.PurchaseOfficerRequired(), handlers.ReceiveGoods)
 		po.DELETE("/:id", middleware.PurchaseOfficerRequired(), handlers.DeletePO)
-		po.POST("/:id/receive", middleware.ManagerRequired(), handlers.ReceiveGoods)
 	}
 
 	// Vendor management - for Admin users

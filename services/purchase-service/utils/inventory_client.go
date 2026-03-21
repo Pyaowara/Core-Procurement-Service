@@ -99,9 +99,9 @@ func FetchInventoryItemAndCreateSnapshot(sku string, authToken string) (*Invento
 		snapshot, snapshotErr := GetLatestSnapshot()
 		if snapshotErr != nil {
 			// No snapshot available - fail
-			errMsg := fmt.Sprintf("SKU not found in inventory and no cached snapshot available")
+			errMsg := "SKU not found in inventory and no cached snapshot available"
 			log.Printf("SKU '%s' failed - no inventory data and no snapshot: %v", sku, snapshotErr)
-			return nil, "", fmt.Errorf(errMsg)
+			return nil, "", fmt.Errorf("%s", errMsg)
 		}
 
 		// Use snapshot data - search for requested SKU in cached inventory list

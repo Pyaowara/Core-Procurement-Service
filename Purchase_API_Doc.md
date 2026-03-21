@@ -443,12 +443,17 @@ Soft delete a PR.
 
 🔒 **Auth Required**: `PurchaseOfficer`, `Admin`
 
-Create a Purchase Order from an approved PR using an **atomic transaction**. PO items are automatically sourced from the selected PR items. Multiple POs can be created from the same PR.
+Create a Purchase Order from an approved PR using an **atomic transaction**. PO items are sourced from selected PR items with optional field overrides. Multiple POs can be created from the same PR.
 
 **Transaction Behavior**: 
-- PO creation, PO items creation, and vendor snapshot creation are atomic
+- PO creation, PO items creation are atomic
 - If any step fails, the entire transaction is rolled back
 - No orphaned PO records will exist without items
+
+**Field Override Logic**:
+- SKU, ItemName, Description are always copied from PR Item
+- Optional fields (Quantity, PricePerUnit, Discount, DiscountUnit, RequiredDate) use request values if provided, otherwise use PR Item values
+- TotalPrice is always calculated automatically from the values used
 
 **Request Body**
 
@@ -458,7 +463,16 @@ Create a Purchase Order from an approved PR using an **atomic transaction**. PO 
   "vendor_id": 1,
   "credit_day": 30,
   "due_date": "2026-04-15",
-  "item_ids": [1, 2, 3]
+  "po_items": [
+    {
+      "pr_item_id": 1,
+      "quantity": 50,
+      "price_per_unit": 6.00
+    },
+    {
+      "pr_item_id": 2
+    }
+  ]
 }
 ```
 
@@ -470,34 +484,58 @@ Create a Purchase Order from an approved PR using an **atomic transaction**. PO 
 | `vendor_id` | integer | ✓ | ID of vendor |
 | `credit_day` | integer | | Payment terms in days (default: 0) |
 | `due_date` | string (YYYY-MM-DD) | ✓ | Expected delivery date |
-| `item_ids` | array[integer] | | Array of PR item IDs to include. All IDs must belong to the specified PR. If omitted, all PR items will be used. |
+| `po_items` | array[object] | ✓ | Array of PO items with PR Item references |
 
-**Validation Rules**
+**PO Item Fields**
 
-- All PR item IDs in `item_ids` must belong to the specified PR
-- At least 1 valid PO item must be created (otherwise PO is not created)
-- Multiple POs can be created from the same PR with different vendors/items
+| Field | Type | Required | Description |
+| ----- | ---- | -------- | ----------- |
+| `pr_item_id` | integer | ✓ | Which PR Item to use as base |
+| `quantity` | integer | | Override PR Item quantity |
+| `price_per_unit` | number | | Override PR Item price |
+| `discount` | number | | Override PR Item discount |
+| `discount_unit` | string | | Override PR Item discount unit (% or BAHT) |
+| `required_date` | string (YYYY-MM-DD) | | Override PR Item required date |
+
+**Notes**:
+- If optional field is not provided, PR Item value is used
+- SKU, ItemName, Description always come from PR Item
+- TotalPrice is calculated as: `quantity × price_per_unit - (discount based on discount_unit)`
 
 **Examples**
 
-Create PO with all PR items:
-```json
-{
-  "pr_id": 1,
-  "vendor_id": 1,
-  "credit_day": 30,
-  "due_date": "2026-04-15"
-}
-```
-
-Create PO with selected items:
+Create PO with PR Item overrides:
 ```json
 {
   "pr_id": 1,
   "vendor_id": 1,
   "credit_day": 30,
   "due_date": "2026-04-15",
-  "item_ids": [1, 3]
+  "po_items": [
+    {
+      "pr_item_id": 1,
+      "quantity": 50,
+      "price_per_unit": 6.00
+    }
+  ]
+}
+```
+
+Create PO with PR Item default values:
+```json
+{
+  "pr_id": 1,
+  "vendor_id": 1,
+  "credit_day": 30,
+  "due_date": "2026-04-15",
+  "po_items": [
+    {
+      "pr_item_id": 1
+    },
+    {
+      "pr_item_id": 2
+    }
+  ]
 }
 ```
 
@@ -511,21 +549,21 @@ Create PO with selected items:
     "po_number": "PO_20260305150405",
     "pr_id": 1,
     "vendor_id": 1,
-    "status": "DRAFT",
+    "status": "SENT",
     "credit_day": 30,
     "due_date": "2026-04-15T00:00:00Z",
     "items": [
       {
         "id": 1,
         "po_id": 1,
+        "sku": "SKU001",
         "item_name": "Printer Paper",
         "description": "A4 paper 80gsm",
-        "quantity": 100,
-        "unit": "ชิ้น",
-        "price_per_unit": 5.50,
+        "quantity": 50,
+        "price_per_unit": 6.00,
         "discount": 10,
         "discount_unit": "%",
-        "total_price": 495.00,
+        "total_price": 270.00,
         "required_date": "2026-03-15T00:00:00Z"
       }
     ],
@@ -539,14 +577,16 @@ Create PO with selected items:
 
 | Status | Error Message | Description |
 | ------ | ------------- | ----------- |
-| `400` | `"no valid items to create PO"` | No items selected or all selected items are invalid; PO is not created |
-| `400` | `"PR item ID X does not belong to this PR"` | Requested item ID not in PR |
+| `400` | `"at least one PO item is required"` | po_items array is empty |
+| `400` | `"PR item ID X does not belong to this PR"` | Requested PR Item ID not in PR |
 | `400` | `"only approved PRs can generate PO"` | PR is not in APPROVED status |
 | `404` | `"PR not found"` | PR ID does not exist |
 | `404` | `"vendor not found"` | Vendor ID does not exist |
 | `500` | `"failed to create PO and items"` | Transaction failed during creation |
 
-**Note**: Uses **atomic transaction**. PO creation, PO items creation, and vendor snapshot creation either all succeed or all fail. No orphaned PO records will be created without items.
+**Status**: New POs are created with status **SENT** (not DRAFT).
+
+**Note**: Uses **atomic transaction**. PO creation and PO items creation either all succeed or all fail. No orphaned PO records will be created without items.
 
 ---
 
@@ -560,7 +600,7 @@ Get all POs with optional filters.
 
 | Parameter | Type   | Description |
 | --------- | ------ | ----------- |
-| `status`  | string | Filter by status (DRAFT, SENT, COMPLETED) |
+| `status`  | string | Filter by status (SENT, COMPLETED) |
 | `pr_id`   | number | Filter by PR ID |
 
 **Example**: `GET /po?status=SENT&pr_id=1`
@@ -574,7 +614,7 @@ Get all POs with optional filters.
     "po_number": "PO_20260305150405",
     "pr_id": 1,
     "vendor_id": 1,
-    "status": "DRAFT",
+    "status": "SENT",
     "credit_day": 30,
     "due_date": "2026-04-15T00:00:00Z",
     "items": [...],
@@ -644,79 +684,69 @@ Get PO details by ID, including vendor snapshot.
 
 ### `PUT /po/:id`
 
-🔒 **Auth Required**: `PurchaseOfficer`, `Admin`
+🔒 **Auth Required**: `Manager`, `Admin`
 
-Update PO status and other details.
-
-**Request Body**
-
-```json
-{
-  "status": "SENT",
-  "credit_day": 45,
-  "due_date": "2026-04-30"
-}
-```
-
-**Valid Statuses**: `DRAFT`, `SENT`, `COMPLETED`
-
-**Response** `200 OK`
-
-```json
-{
-  "message": "PO updated successfully",
-  "data": {
-    "id": 1,
-    "po_number": "PO_20260305150405",
-    "status": "SENT",
-    "credit_day": 45,
-    "due_date": "2026-04-30T00:00:00Z",
-    "items": [...],
-    "updated_at": "2026-03-05T15:10:00Z"
-  }
-}
-```
-
-**Error** `400 Bad Request`
-
-```json
-{
-  "error": "invalid status"
-}
-```
-
----
-
-### `POST /po/:id/receive`
-
-🔒 **Auth Required**: `Manager`, `PurchaseOfficer`, `Admin`
-
-Record goods reception for a PO. Publishes `goods.received` event to Inventory Service.
+Record goods reception for a PO and update status to COMPLETED. Publishes `goods.received` event to Inventory Service with item details.
 
 **Request Body**
 
 ```json
 {
   "received_qty": {
-    "Printer Paper": 100
+    "SKU001": 100,
+    "SKU002": 50
   }
 }
 ```
+
+**Parameters**
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `received_qty` | object | Map of SKU to received quantity |
+
+**Notes**:
+- PO status will be updated to **COMPLETED**
+- Event sent to Inventory Service includes: PO ID, PO Number, and items list with(SKU, ItemName, Quantity)
+- Inventory service uses this event to increment stock for each item
 
 **Response** `200 OK`
 
 ```json
 {
-  "message": "Goods received successfully",
+  "message": "Goods received successfully and PO marked as COMPLETED",
   "data": {
     "id": 1,
     "po_id": 1,
     "received_data": {
-      "Printer Paper": 100
+      "SKU001": 100,
+      "SKU002": 50
     },
     "received_at": "2026-03-05T15:15:00Z",
     "created_at": "2026-03-05T15:15:00Z"
   }
+}
+```
+
+**GoodsReceivedEvent** (Published to RabbitMQ):
+
+```json
+{
+  "po_id": 1,
+  "po_number": "PO_20260305150405",
+  "items": [
+    {
+      "sku": "SKU001",
+      "item_name": "Printer Paper",
+      "quantity": 100
+    },
+    {
+      "sku": "SKU002",
+      "item_name": "Ink Cartridge",
+      "quantity": 50
+    }
+  ],
+  "timestamp": "2026-03-05T15:15:00Z"
 }
 ```
 
@@ -725,6 +755,14 @@ Record goods reception for a PO. Publishes `goods.received` event to Inventory S
 ```json
 {
   "error": "PO not found"
+}
+```
+
+**Error** `400 Bad Request`
+
+```json
+{
+  "error": "received_qty is required"
 }
 ```
 
@@ -937,8 +975,7 @@ Delete a vendor.
 | POST | `/po` | Create PO from approved PR | PurchaseOfficer, Admin |
 | GET | `/po` | List all POs | Authenticated |
 | GET | `/po/:id` | Get PO details | Authenticated |
-| PUT | `/po/:id` | Update PO status | PurchaseOfficer, Admin |
-| POST | `/po/:id/receive` | Record goods reception | Manager, PurchaseOfficer, Admin |
+| PUT | `/po/:id` | Record goods receipt (mark as COMPLETED) | Manager, Admin |
 | DELETE | `/po/:id` | Delete PO | PurchaseOfficer, Admin |
 | POST | `/vendor` | Create vendor | Admin |
 | GET | `/vendor` | List all vendors | Authenticated |
@@ -956,7 +993,7 @@ The Purchase Service publishes the following events to RabbitMQ:
 |-------|---|---------|
 | `pr.ready.for.approval` | PR is submitted for approval | PR details, items, workflow ID |
 | `po.created` | PO is created from approved PR | PO details, vendor info, items |
-| `goods.received` | Goods are received for a PO | PO ID, received quantities |
+| `goods.received` | Goods are received for a PO (after PUT /po/:id) | PO ID, items list (SKU, ItemName, Quantity) for inventory update |
 
 ---
 
@@ -990,7 +1027,7 @@ The Purchase Service auto-subscribes to approval events:
 - `REJECTED`: Rejected by approval workflow
 
 ### PO Statuses
-- `DRAFT`: Initial state created from approved PR
+- `SENT`: Initial state created from approved PR (when PO is first created)
 - `SENT`: Sent to vendor
 - `COMPLETED`: Goods fully received
 
@@ -1042,17 +1079,15 @@ POST /po
   "po_items": [...]
 }
 ```
-- Creates PO in DRAFT status
+- Creates PO in SENT status (goods will be in transit)
 - Creates vendor snapshot
 - Publishes PO_CREATED event
 
-### 5. Send PO and Record Goods Reception
+### 5. Record Goods Reception (Mark PO as COMPLETED)
 ```
 PUT /po/:id
-{"status": "SENT"}
-
-POST /po/:id/receive
-{"received_qty": {"Laptop": 3}}
+{"received_qty": {"SKU001": 3}}
 ```
-- Updates status and notifies Inventory Service
-- Inventory Service updates stock levels
+- Updates status to COMPLETED
+- Publishes goods.received event to Inventory Service
+- Inventory service increments stock by received quantity
