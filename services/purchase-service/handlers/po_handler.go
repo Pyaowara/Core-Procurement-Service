@@ -33,7 +33,7 @@ type CreatePOItem struct {
 }
 
 type ReceiveGoodsRequest struct {
-	ReceivedQty map[string]int `json:"received_qty" binding:"required"`
+	// Empty - goods received based on PO item quantities automatically
 }
 
 // CalculateTotalPrice calculates total price based on quantity, price per unit, and discount
@@ -250,15 +250,11 @@ func GetPOList(c *gin.Context) {
 	c.JSON(http.StatusOK, pos)
 }
 
-// ReceiveGoods records goods reception
+// ReceiveGoods records goods reception based on PO item quantities
+// Only requires PO ID - updates all items as received with their full quantities
+// Can only be used when PO status is SENT
 func ReceiveGoods(c *gin.Context) {
 	poID := c.Param("id")
-
-	var req ReceiveGoodsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
 
 	var po models.PurchaseOrder
 	if err := config.DB.Preload("Items").First(&po, poID).Error; err != nil {
@@ -266,8 +262,20 @@ func ReceiveGoods(c *gin.Context) {
 		return
 	}
 
+	// Check if PO status is SENT
+	if po.Status != models.POStatusSent {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "This PO has already received goods."})
+		return
+	}
+
+	// Build received quantities from PO items
+	receivedQty := make(map[string]int)
+	for _, item := range po.Items {
+		receivedQty[item.SKU] = item.Quantity
+	}
+
 	// Create goods received record
-	receivedData, _ := json.Marshal(req.ReceivedQty)
+	receivedData, _ := json.Marshal(receivedQty)
 	goodsReceived := models.GoodsReceived{
 		POID:         po.ID,
 		ReceivedData: receivedData,
@@ -290,9 +298,10 @@ func ReceiveGoods(c *gin.Context) {
 	// Add items from PO to event
 	for _, item := range po.Items {
 		event.Items = append(event.Items, messaging.GoodsReceivedItem{
-			SKU:      item.SKU,
-			ItemName: item.ItemName,
-			Quantity: item.Quantity,
+			SKU:         item.SKU,
+			ItemName:    item.ItemName,
+			Description: item.Description,
+			Quantity:    item.Quantity,
 		})
 	}
 

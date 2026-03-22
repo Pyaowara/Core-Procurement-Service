@@ -12,7 +12,6 @@ import (
 	"github.com/core-procurement/purchase-service/config"
 	"github.com/core-procurement/purchase-service/messaging"
 	"github.com/core-procurement/purchase-service/models"
-	"github.com/core-procurement/purchase-service/utils"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -25,7 +24,9 @@ type CreatePRRequest struct {
 }
 
 type CreatePRItemRequest struct {
-	SKU          string  `json:"sku" binding:"required"` // Stock Keeping Unit
+	SKU          string  `json:"sku" binding:"required"`         // Stock Keeping Unit
+	ItemName     string  `json:"item_name" binding:"required"`   // Item Name
+	Description  string  `json:"description" binding:"required"` // Item Description
 	Quantity     int     `json:"quantity" binding:"required,gt=0"`
 	PricePerUnit float64 `json:"price_per_unit"`
 	Discount     float64 `json:"discount"`
@@ -46,38 +47,24 @@ func GeneratePRNumber(prID uint) string {
 	return fmt.Sprintf("PR-%s-%06d", timestamp, prID)
 }
 
-// CheckAndCreatePRItems creates PR items by fetching item details from inventory service by SKU
-// If inventory service is unavailable, uses cached snapshots as fallback
-// Creates snapshots on successful fetch for future fallback use
+// CheckAndCreatePRItems creates PR items from request data without inventory validation
 // Returns:
-// - items to create with fetched details from inventory or snapshot
+// - items to create with data from request
 // - item validation details for response
-// - error if SKU not found in inventory and no snapshot available
+// - error if no valid items provided
 func CheckAndCreatePRItems(pr *models.PurchaseRequest, items []CreatePRItemRequest, authToken string) ([]models.PRItem, map[string]interface{}, error) {
 	itemCheckDetails := make(map[string]interface{})
 	var prItemsToCreate []models.PRItem
 
 	for _, item := range items {
-		// Fetch item from inventory and create snapshot (or use snapshot as fallback)
-		inventoryItem, status, err := utils.FetchInventoryItemAndCreateSnapshot(item.SKU, authToken)
-		if err != nil {
-			errMsg := err.Error()
-			log.Printf("SKU '%s' failed: %v", item.SKU, err)
-			itemCheckDetails[item.SKU] = gin.H{
-				"status": "error",
-				"error":  errMsg,
-			}
-			continue
-		}
-
-		// Create PR item with fetched details
+		// Create PR item from request data without inventory validation
 		requiredDate, _ := time.Parse("2006-01-02", item.RequiredDate)
 		totalPrice := CalculateTotalPrice(item.Quantity, item.PricePerUnit, item.Discount, item.DiscountUnit)
 		prItem := models.PRItem{
 			PRID:         pr.ID,
 			SKU:          item.SKU,
-			ItemName:     inventoryItem.Name,
-			Description:  inventoryItem.Description,
+			ItemName:     item.ItemName,
+			Description:  item.Description,
 			Quantity:     item.Quantity,
 			PricePerUnit: item.PricePerUnit,
 			Discount:     item.Discount,
@@ -89,10 +76,10 @@ func CheckAndCreatePRItems(pr *models.PurchaseRequest, items []CreatePRItemReque
 
 		// Add to check details
 		itemCheckDetails[item.SKU] = gin.H{
-			"item_name":   inventoryItem.Name,
-			"description": inventoryItem.Description,
+			"item_name":   item.ItemName,
+			"description": item.Description,
 			"quantity":    item.Quantity,
-			"status":      status,
+			"status":      "created",
 		}
 	}
 

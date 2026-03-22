@@ -93,9 +93,10 @@ type GoodsReceivedEvent struct {
 }
 
 type GoodsReceivedItem struct {
-	SKU      string `json:"sku"`
-	ItemName string `json:"item_name"`
-	Quantity int    `json:"quantity"`
+	SKU         string `json:"sku"`
+	ItemName    string `json:"item_name"`
+	Description string `json:"description"`
+	Quantity    int    `json:"quantity"`
 }
 
 // Helper function to marshal events to JSON
