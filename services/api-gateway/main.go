@@ -6,8 +6,81 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
+
+var (
+	pathIDPattern = regexp.MustCompile(`^\d+$|^[0-9a-fA-F-]{8,}$`)
+
+	httpRequestsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "http_requests_total",
+			Help: "Total number of HTTP requests.",
+		},
+		[]string{"service", "method", "path", "status"},
+	)
+	httpRequestDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "http_request_duration_seconds",
+			Help:    "HTTP request latency in seconds.",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"service", "method", "path", "status"},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(httpRequestsTotal, httpRequestDuration)
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	r.status = code
+	r.ResponseWriter.WriteHeader(code)
+}
+
+func normalizePath(path string) string {
+	if path == "" {
+		return "/"
+	}
+
+	segments := strings.Split(path, "/")
+	for i, segment := range segments {
+		if pathIDPattern.MatchString(segment) {
+			segments[i] = ":id"
+		}
+	}
+
+	return strings.Join(segments, "/")
+}
+
+func withMetrics(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		start := time.Now()
+		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(recorder, r)
+
+		path := normalizePath(r.URL.Path)
+		status := strconv.Itoa(recorder.status)
+		httpRequestsTotal.WithLabelValues("api-gateway", r.Method, path, status).Inc()
+		httpRequestDuration.WithLabelValues("api-gateway", r.Method, path, status).Observe(time.Since(start).Seconds())
+	})
+}
 
 func newProxy(target string) *httputil.ReverseProxy {
 	u, err := url.Parse(target)
@@ -96,12 +169,16 @@ func main() {
 		approvalProxy:  newProxy(approvalURL),
 	}
 
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+	mux.Handle("/", g)
+
 	log.Printf("api-gateway starting on port %s", port)
 	log.Printf("  auth-service      -> %s", authURL)
 	log.Printf("  inventory-service -> %s", inventoryURL)
 	log.Printf("  purchase-service  -> %s", purchaseURL)
 	log.Printf("  approval-service  -> %s", approvalURL)
-	if err := http.ListenAndServe(":"+port, g); err != nil {
+	if err := http.ListenAndServe(":"+port, withMetrics(mux)); err != nil {
 		log.Fatalf("failed to start gateway: %v", err)
 	}
 }
