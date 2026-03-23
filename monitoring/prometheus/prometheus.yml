@@ -1,0 +1,38 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["prometheus:9090"]
+
+  - job_name: cadvisor
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  - job_name: api-gateway
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api-gateway:8080"]
+
+  - job_name: auth-identity-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["auth-identity-service:6767"]
+
+  - job_name: inventory-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["inventory-service:6768"]
+
+  - job_name: purchase-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["purchase-service:6769"]
+
+  - job_name: approval-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["approval-service:6770"]
