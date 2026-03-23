@@ -22,6 +22,7 @@ type PurchaseRequest struct {
 	PRNumber    string   `gorm:"unique;not null"`
 	RequesterID uint     `gorm:"not null"`
 	Department  string   `gorm:"not null"`
+	Purpose     string   `gorm:"type:text"` // Purpose of the purchase request
 	Status      PRStatus `gorm:"type:varchar(20);default:'DRAFT'"`
 	WorkflowID  string   `gorm:"type:varchar(100)"`
 	Items       []PRItem `gorm:"foreignKey:PRID"`
@@ -35,10 +36,10 @@ type PRItem struct {
 	gorm.Model
 	ID                   uint   `gorm:"primaryKey"`
 	PRID                 uint   `gorm:"not null;index"`
+	SKU                  string `gorm:"not null;index"` // Stock Keeping Unit
 	ItemName             string `gorm:"not null"`
 	Description          string
 	Quantity             int     `gorm:"not null"`
-	Unit                 string  `gorm:"not null"` // ชิ้น, แท่ง, etc.
 	PricePerUnit         float64 `gorm:"type:decimal(15,2)"`
 	Discount             float64 `gorm:"type:decimal(15,2)"`
 	DiscountUnit         string  `gorm:"type:varchar(10)"` // % or BAHT
@@ -50,11 +51,12 @@ type PRItem struct {
 	UpdatedAt            time.Time
 }
 
-// InventorySnapshot stores the state of inventory at the time of PR submission for data consistency
+// InventorySnapshot stores all inventory items list in JSONB
+// Snapshots are kept as history - when inventory service fails, uses the latest snapshot as fallback
 type InventorySnapshot struct {
-	gorm.Model
 	ID           uint            `gorm:"primaryKey"`
-	PRID         uint            `gorm:"not null;index;unique"`
-	SnapshotData json.RawMessage `gorm:"type:jsonb"`
+	SnapshotData json.RawMessage `gorm:"type:jsonb"` // Contains list of all inventory items: [{id, sku, name, description, quantity}, ...]
 	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	DeletedAt    gorm.DeletedAt `gorm:"index"`
 }

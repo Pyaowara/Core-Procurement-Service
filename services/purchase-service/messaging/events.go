@@ -25,16 +25,17 @@ type PRReadyForApprovalEvent struct {
 	PRNumber    string          `json:"pr_number"`
 	RequesterID uint            `json:"requester_id"`
 	Department  string          `json:"department"`
+	Purpose     string          `json:"purpose"`
 	Items       []PRItemPayload `json:"items"`
 	WorkflowID  string          `json:"workflow_id"`
 	Timestamp   time.Time       `json:"timestamp"`
 }
 
 type PRItemPayload struct {
+	SKU          string  `json:"sku"`
 	ItemName     string  `json:"item_name"`
 	Description  string  `json:"description"`
 	Quantity     int     `json:"quantity"`
-	Unit         string  `json:"unit"`
 	PricePerUnit float64 `json:"price_per_unit"`
 	Discount     float64 `json:"discount"`
 	DiscountUnit string  `json:"discount_unit"`
@@ -65,16 +66,17 @@ type POCreatedEvent struct {
 	PRID       uint            `json:"pr_id"`
 	VendorID   uint            `json:"vendor_id"`
 	VendorName string          `json:"vendor_name"`
+	Purpose    string          `json:"purpose"`
 	Items      []POItemPayload `json:"items"`
 	DueDate    string          `json:"due_date"`
 	Timestamp  time.Time       `json:"timestamp"`
 }
 
 type POItemPayload struct {
+	SKU          string  `json:"sku"`
 	ItemName     string  `json:"item_name"`
 	Description  string  `json:"description"`
 	Quantity     int     `json:"quantity"`
-	Unit         string  `json:"unit"`
 	PricePerUnit float64 `json:"price_per_unit"`
 	Discount     float64 `json:"discount"`
 	DiscountUnit string  `json:"discount_unit"`
@@ -82,12 +84,19 @@ type POItemPayload struct {
 	RequiredDate string  `json:"required_date"`
 }
 
-// GoodsReceivedEvent is published when goods are received
+// GoodsReceivedEvent is published when goods are received - includes items for inventory update
 type GoodsReceivedEvent struct {
-	POID        uint           `json:"po_id"`
-	PONumber    string         `json:"po_number"`
-	ReceivedQty map[string]int `json:"received_qty"`
-	Timestamp   time.Time      `json:"timestamp"`
+	POID      uint                `json:"po_id"`
+	PONumber  string              `json:"po_number"`
+	Items     []GoodsReceivedItem `json:"items"` // List of items received
+	Timestamp time.Time           `json:"timestamp"`
+}
+
+type GoodsReceivedItem struct {
+	SKU         string `json:"sku"`
+	ItemName    string `json:"item_name"`
+	Description string `json:"description"`
+	Quantity    int    `json:"quantity"`
 }
 
 // Helper function to marshal events to JSON

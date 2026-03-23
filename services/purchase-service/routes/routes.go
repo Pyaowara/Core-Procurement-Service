@@ -71,24 +71,22 @@ func SetupRouter() *gin.Engine {
 	// PR operations - for Employee/Manager to create and manage PRs
 	pr := r.Group("/pr")
 	{
-		pr.POST("", middleware.EmployeeCanCreatePR(), handlers.CreatePR)
+		pr.POST("", middleware.EmployeeRequired(), handlers.CreatePR)
 		pr.GET("", middleware.AuthRequired(), handlers.GetPRList)
 		pr.GET("/:id", middleware.AuthRequired(), handlers.GetPR)
-		pr.PUT("/:id", middleware.EmployeeCanCreatePR(), handlers.UpdatePR)
-		pr.POST("/:id/submit", middleware.EmployeeCanCreatePR(), handlers.SubmitPR)
-		pr.GET("/:id/snapshot", middleware.AuthRequired(), handlers.GetPRSnapshot)
-		pr.DELETE("/:id", middleware.EmployeeCanCreatePR(), handlers.DeletePR)
+		pr.PUT("/:id", middleware.EmployeeRequired(), handlers.UpdatePR)
+		pr.POST("/:id/submit", middleware.EmployeeRequired(), handlers.SubmitPR)
+		pr.DELETE("/:id", middleware.EmployeeRequired(), handlers.DeletePR)
 	}
 
 	// PO operations - for PurchaseOfficer to manage purchase orders
 	po := r.Group("/po")
 	{
-		po.POST("", middleware.PurchaseOfficerCanCreatePO(), handlers.GeneratePO)
+		po.POST("", middleware.PurchaseOfficerRequired(), handlers.GeneratePO)
 		po.GET("", middleware.AuthRequired(), handlers.GetPOList)
 		po.GET("/:id", middleware.AuthRequired(), handlers.GetPO)
-		po.PUT("/:id", middleware.PurchaseOfficerCanCreatePO(), handlers.UpdatePOStatus)
-		po.DELETE("/:id", middleware.PurchaseOfficerCanCreatePO(), handlers.DeletePO)
-		po.POST("/:id/receive", middleware.ManagerCanManageGoods(), handlers.ReceiveGoods)
+		po.PUT("/:id", middleware.PurchaseOfficerRequired(), handlers.ReceiveGoods)
+		po.DELETE("/:id", middleware.PurchaseOfficerRequired(), handlers.DeletePO)
 	}
 
 	// Vendor management - for Admin users

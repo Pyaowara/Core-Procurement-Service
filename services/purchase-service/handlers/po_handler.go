@@ -15,34 +15,25 @@ import (
 )
 
 type CreatePORequest struct {
-	PRID      uint   `json:"pr_id" binding:"required"`
-	VendorID  uint   `json:"vendor_id" binding:"required"`
-	ItemIDs   []uint `json:"item_ids"` // Optional: if empty, use all PR items
-	CreditDay int    `json:"credit_day"`
-	DueDate   string `json:"due_date" binding:"required"`
+	PRID      uint           `json:"pr_id" binding:"required"`
+	VendorID  uint           `json:"vendor_id" binding:"required"`
+	POItems   []CreatePOItem `json:"po_items" binding:"required,gt=0"` // Select PR Items and set custom values
+	CreditDay int            `json:"credit_day"`
+	DueDate   string         `json:"due_date" binding:"required"`
 }
 
 type CreatePOItem struct {
-	ItemName     string  `json:"item_name" binding:"required"`
-	Description  string  `json:"description"`
-	Quantity     int     `json:"quantity" binding:"required,gt=0"`
-	Unit         string  `json:"unit" binding:"required"`
-	PricePerUnit float64 `json:"price_per_unit" binding:"required"`
-	Discount     float64 `json:"discount"`
-	DiscountUnit string  `json:"discount_unit"`
-	TotalPrice   float64 `json:"total_price"`
-	RequiredDate string  `json:"required_date"`
-}
-
-type UpdatePORequest struct {
-	Status    string         `json:"status"`
-	CreditDay int            `json:"credit_day"`
-	DueDate   string         `json:"due_date"`
-	POItems   []CreatePOItem `json:"po_items"`
+	PRItemID     uint     `json:"pr_item_id" binding:"required"` // Which PR Item to use
+	Quantity     *int     `json:"quantity"`                      // Optional: override from PR Item
+	PricePerUnit *float64 `json:"price_per_unit"`                // Optional: override from PR Item
+	Discount     *float64 `json:"discount"`                      // Optional: override from PR Item
+	DiscountUnit *string  `json:"discount_unit"`                 // Optional: override from PR Item
+	RequiredDate *string  `json:"required_date"`                 // Optional: override from PR Item
+	// SKU, ItemName, Description, TotalPrice are derived from PR Item or calculated
 }
 
 type ReceiveGoodsRequest struct {
-	ReceivedQty map[string]int `json:"received_qty" binding:"required"`
+	// Empty - goods received based on PO item quantities automatically
 }
 
 // CalculateTotalPrice calculates total price based on quantity, price per unit, and discount
@@ -83,56 +74,44 @@ func GeneratePO(c *gin.Context) {
 		return
 	}
 
-	// Create map of all PR items for validation
+	// Validate that all requested PR Item IDs belong to this PR
 	prItemsMap := make(map[uint]*models.PRItem)
 	for i := range pr.Items {
 		prItemsMap[pr.Items[i].ID] = &pr.Items[i]
 	}
 
-	// Create map of selected item IDs for quick lookup
-	selectedItemsMap := make(map[uint]bool)
-	if len(req.ItemIDs) > 0 {
-		// Validate that all requested item IDs belong to this PR
-		for _, itemID := range req.ItemIDs {
-			if _, exists := prItemsMap[itemID]; !exists {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "PR item ID " + fmt.Sprint(itemID) + " does not belong to this PR"})
-				return
-			}
-			selectedItemsMap[itemID] = true
-		}
-	} else {
-		// If no items specified, select all PR items
-		for _, item := range pr.Items {
-			selectedItemsMap[item.ID] = true
+	for _, poItem := range req.POItems {
+		if _, exists := prItemsMap[poItem.PRItemID]; !exists {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "PR item ID " + fmt.Sprint(poItem.PRItemID) + " does not belong to this PR"})
+			return
 		}
 	}
 
-	// Check if there are any valid items to create PO
-	validItemCount := 0
-	for _, item := range pr.Items {
-		if selectedItemsMap[item.ID] {
-			validItemCount++
-		}
-	}
-
-	// If no items to create, return error immediately
-	if validItemCount == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "no valid items to create PO"})
+	// Check if there are PO items to create
+	if len(req.POItems) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one PO item is required"})
 		return
 	}
 
 	dueDate, _ := time.Parse("2006-01-02", req.DueDate)
 
-	// Use transaction to create PO, PO items, and vendor snapshot together
+	// Use transaction to create PO and PO items together
 	var po models.PurchaseOrder
 	var poCreationErr error
 	poCreationErr = config.DB.Transaction(func(tx *gorm.DB) error {
+		// Get the PR info for Purpose
+		var pr models.PurchaseRequest
+		if err := tx.First(&pr, req.PRID).Error; err != nil {
+			return fmt.Errorf("failed to fetch PR: %v", err)
+		}
+
 		// Create PO
 		po = models.PurchaseOrder{
 			PONumber:  "PO_" + time.Now().Format("20060102150405"),
 			PRID:      req.PRID,
 			VendorID:  req.VendorID,
-			Status:    models.POStatusDraft,
+			Purpose:   pr.Purpose,
+			Status:    models.POStatusSent,
 			CreditDay: req.CreditDay,
 			DueDate:   dueDate,
 		}
@@ -141,25 +120,55 @@ func GeneratePO(c *gin.Context) {
 			return err
 		}
 
-		// Create PO items from selected PR items
+		// Create PO items from request with PR Item as base
 		itemsCreated := 0
-		for _, prItem := range pr.Items {
-			if !selectedItemsMap[prItem.ID] {
-				continue // Skip items not in selection
+		for _, reqItem := range req.POItems {
+			// Get PR Item details
+			prItem := prItemsMap[reqItem.PRItemID]
+
+			// Use request values or default to PR Item values
+			quantity := prItem.Quantity
+			if reqItem.Quantity != nil {
+				quantity = *reqItem.Quantity
 			}
+
+			pricePerUnit := prItem.PricePerUnit
+			if reqItem.PricePerUnit != nil {
+				pricePerUnit = *reqItem.PricePerUnit
+			}
+
+			discount := prItem.Discount
+			if reqItem.Discount != nil {
+				discount = *reqItem.Discount
+			}
+
+			discountUnit := prItem.DiscountUnit
+			if reqItem.DiscountUnit != nil {
+				discountUnit = *reqItem.DiscountUnit
+			}
+
+			requiredDate := prItem.RequiredDate
+			if reqItem.RequiredDate != nil {
+				parsedDate, err := time.Parse("2006-01-02", *reqItem.RequiredDate)
+				if err == nil {
+					requiredDate = parsedDate
+				}
+			}
+
 			// Calculate total price automatically
-			totalPrice := CalculateTotalPrice(prItem.Quantity, prItem.PricePerUnit, prItem.Discount, prItem.DiscountUnit)
+			totalPrice := CalculateTotalPrice(quantity, pricePerUnit, discount, discountUnit)
+
 			poItem := models.POItem{
 				POID:         po.ID,
+				SKU:          prItem.SKU,
 				ItemName:     prItem.ItemName,
 				Description:  prItem.Description,
-				Quantity:     prItem.Quantity,
-				Unit:         prItem.Unit,
-				PricePerUnit: prItem.PricePerUnit,
-				Discount:     prItem.Discount,
-				DiscountUnit: prItem.DiscountUnit,
+				Quantity:     quantity,
+				PricePerUnit: pricePerUnit,
+				Discount:     discount,
+				DiscountUnit: discountUnit,
 				TotalPrice:   totalPrice,
-				RequiredDate: prItem.RequiredDate,
+				RequiredDate: requiredDate,
 			}
 			if err := tx.Create(&poItem).Error; err != nil {
 				return err
@@ -170,20 +179,6 @@ func GeneratePO(c *gin.Context) {
 		// If no items were created, rollback transaction
 		if itemsCreated == 0 {
 			return fmt.Errorf("no PO items created")
-		}
-
-		// Create vendor snapshot for data consistency
-		vendorSnapshotData, _ := json.Marshal(vendor)
-		vendorSnapshot := models.VendorSnapshot{
-			POID:          po.ID,
-			VendorID:      vendor.ID,
-			VendorName:    vendor.Name,
-			VendorAddress: vendor.Address,
-			VendorTaxID:   vendor.TaxID,
-			SnapshotData:  vendorSnapshotData,
-		}
-		if err := tx.Create(&vendorSnapshot).Error; err != nil {
-			return err
 		}
 
 		return nil
@@ -197,108 +192,47 @@ func GeneratePO(c *gin.Context) {
 	// Reload PO with items
 	config.DB.Preload("Items").First(&po, po.ID)
 
-	// Publish PO_CREATED event
-	event := messaging.POCreatedEvent{
-		POID:       po.ID,
-		PONumber:   po.PONumber,
-		PRID:       po.PRID,
-		VendorID:   po.VendorID,
-		VendorName: vendor.Name,
-		DueDate:    dueDate.Format("2006-01-02"),
-		Timestamp:  time.Now(),
-	}
-
-	for _, item := range po.Items {
-		event.Items = append(event.Items, messaging.POItemPayload{
-			ItemName:     item.ItemName,
-			Description:  item.Description,
-			Quantity:     item.Quantity,
-			Unit:         item.Unit,
-			PricePerUnit: item.PricePerUnit,
-			Discount:     item.Discount,
-			DiscountUnit: item.DiscountUnit,
-			TotalPrice:   item.TotalPrice,
-			RequiredDate: item.RequiredDate.Format("2006-01-02"),
-		})
-	}
-
-	eventBytes, _ := json.Marshal(event)
-	if err := messaging.MQClient.PublishMessage(messaging.ExchangeName, messaging.EventPOCreated, eventBytes); err != nil {
-		log.Printf("failed to publish PO_CREATED event: %v", err)
-	}
-
 	c.JSON(http.StatusCreated, gin.H{
 		"message": "PO created successfully",
 		"data":    po,
 	})
 }
 
-// UpdatePOStatus updates the PO status
-func UpdatePOStatus(c *gin.Context) {
-	poID := c.Param("id")
-
-	var req UpdatePORequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	var po models.PurchaseOrder
-	if err := config.DB.First(&po, poID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "PO not found"})
-		return
-	}
-
-	if req.Status != "" {
-		validStatuses := map[string]bool{
-			string(models.POStatusDraft):     true,
-			string(models.POStatusSent):      true,
-			string(models.POStatusCompleted): true,
-		}
-		if !validStatuses[req.Status] {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid status"})
-			return
-		}
-		po.Status = models.POStatus(req.Status)
-	}
-
-	if req.CreditDay > 0 {
-		po.CreditDay = req.CreditDay
-	}
-
-	if req.DueDate != "" {
-		dueDate, _ := time.Parse("2006-01-02", req.DueDate)
-		po.DueDate = dueDate
-	}
-
-	config.DB.Save(&po)
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "PO updated successfully",
-		"data":    po,
-	})
-}
-
-// GetPO retrieves a PO by ID
+// GetPO retrieves a PO by ID with role-based filtering
 func GetPO(c *gin.Context) {
 	poID := c.Param("id")
+	role, _ := c.Get("role")
 
 	var po models.PurchaseOrder
-	if err := config.DB.Preload("Items").Preload("VendorSnapshot").First(&po, poID).Error; err != nil {
+	if err := config.DB.Preload("Items").First(&po, poID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "PO not found"})
 		return
+	}
+
+	// Non-PurchaseOfficer and non-Admin roles can only view non-deleted POs
+	if role.(string) != "PurchaseOfficer" && role.(string) != "Admin" {
+		if po.IsDeleted {
+			c.JSON(http.StatusNotFound, gin.H{"error": "PO not found"})
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, po)
 }
 
-// GetPOList retrieves all POs
+// GetPOList retrieves POs with role-based filtering
 func GetPOList(c *gin.Context) {
 	status := c.Query("status")
 	prID := c.Query("pr_id")
+	role, _ := c.Get("role")
 
 	var pos []models.PurchaseOrder
 	query := config.DB
+
+	// Non-PurchaseOfficer and non-Admin roles can only view non-deleted POs
+	if role.(string) != "PurchaseOfficer" && role.(string) != "Admin" {
+		query = query.Where("is_deleted = ?", false)
+	}
 
 	if status != "" {
 		query = query.Where("status = ?", status)
@@ -316,15 +250,11 @@ func GetPOList(c *gin.Context) {
 	c.JSON(http.StatusOK, pos)
 }
 
-// ReceiveGoods records goods reception
+// ReceiveGoods records goods reception based on PO item quantities
+// Only requires PO ID - updates all items as received with their full quantities
+// Can only be used when PO status is SENT
 func ReceiveGoods(c *gin.Context) {
 	poID := c.Param("id")
-
-	var req ReceiveGoodsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
 
 	var po models.PurchaseOrder
 	if err := config.DB.Preload("Items").First(&po, poID).Error; err != nil {
@@ -332,8 +262,20 @@ func ReceiveGoods(c *gin.Context) {
 		return
 	}
 
+	// Check if PO status is SENT
+	if po.Status != models.POStatusSent {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "This PO has already received goods."})
+		return
+	}
+
+	// Build received quantities from PO items
+	receivedQty := make(map[string]int)
+	for _, item := range po.Items {
+		receivedQty[item.SKU] = item.Quantity
+	}
+
 	// Create goods received record
-	receivedData, _ := json.Marshal(req.ReceivedQty)
+	receivedData, _ := json.Marshal(receivedQty)
 	goodsReceived := models.GoodsReceived{
 		POID:         po.ID,
 		ReceivedData: receivedData,
@@ -341,12 +283,26 @@ func ReceiveGoods(c *gin.Context) {
 	}
 	config.DB.Create(&goodsReceived)
 
-	// Publish GOODS_RECEIVED event
+	// Update PO status to COMPLETED
+	po.Status = models.POStatusCompleted
+	config.DB.Save(&po)
+
+	// Publish GOODS_RECEIVED event with item details to inventory service
 	event := messaging.GoodsReceivedEvent{
-		POID:        po.ID,
-		PONumber:    po.PONumber,
-		ReceivedQty: req.ReceivedQty,
-		Timestamp:   time.Now(),
+		POID:      po.ID,
+		PONumber:  po.PONumber,
+		Items:     []messaging.GoodsReceivedItem{},
+		Timestamp: time.Now(),
+	}
+
+	// Add items from PO to event
+	for _, item := range po.Items {
+		event.Items = append(event.Items, messaging.GoodsReceivedItem{
+			SKU:         item.SKU,
+			ItemName:    item.ItemName,
+			Description: item.Description,
+			Quantity:    item.Quantity,
+		})
 	}
 
 	eventBytes, _ := json.Marshal(event)
@@ -355,7 +311,7 @@ func ReceiveGoods(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "Goods received successfully",
+		"message": "Goods received successfully and PO marked as COMPLETED",
 		"data":    goodsReceived,
 	})
 }
