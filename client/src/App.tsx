@@ -7,6 +7,8 @@ import InventoryPage from "@/pages/InventoryPage";
 import AdminPage from "@/pages/AdminPage";
 import ProfilePage from "@/pages/ProfilePage";
 import CatalogPage from "@/pages/CatalogPage";
+import PrListPage from "@/pages/PrListPage";
+import PrDetailPage from "@/pages/PrDetailPage";
 import RoleGuard from "@/components/RoleGuard";
 
 function HomeRedirect() {
@@ -28,6 +30,8 @@ export default function App() {
 
           <Route element={<Layout />}>
             <Route path="/catalog" element={<CatalogPage />} />
+            <Route path="/pr" element={<PrListPage />} />
+            <Route path="/pr/:id" element={<PrDetailPage />} />
             <Route path="/profile" element={<ProfilePage />} />
             <Route
               path="/inventory"

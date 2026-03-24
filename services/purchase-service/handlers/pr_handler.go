@@ -277,6 +277,12 @@ func UpdatePR(c *gin.Context) {
 		return
 	}
 
+	// Check if PR is deleted
+	if pr.IsDeleted {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot update deleted PR"})
+		return
+	}
+
 	// Only allow updating DRAFT PRs
 	if pr.Status != models.PRStatusDraft {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "only DRAFT PRs can be updated"})
@@ -426,6 +432,9 @@ func GetPRList(c *gin.Context) {
 		return
 	}
 
+	// Don't show deleted PRs
+	query = query.Where("is_deleted = ?", false)
+
 	if status != "" {
 		query = query.Where("status = ?", status)
 	}
@@ -449,6 +458,12 @@ func SubmitPR(c *gin.Context) {
 	var pr models.PurchaseRequest
 	if err := config.DB.Preload("Items").First(&pr, prID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "PR not found"})
+		return
+	}
+
+	// Check if PR is deleted
+	if pr.IsDeleted {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot submit deleted PR"})
 		return
 	}
 
@@ -552,6 +567,6 @@ func DeletePR(c *gin.Context) {
 
 	pr.IsDeleted = true
 	config.DB.Save(&pr)
-
+	log.Printf("Soft deleted PR %d", pr.ID)
 	c.JSON(http.StatusOK, gin.H{"message": "PR deleted successfully"})
 }
