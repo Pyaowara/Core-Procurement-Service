@@ -263,7 +263,7 @@ func ReceiveGoods(c *gin.Context) {
 	}
 
 	// Check if PO status is SENT
-	if po.Status != models.POStatusSent {
+	if po.Status == models.POStatusCompleted {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "This PO has already received goods."})
 		return
 	}

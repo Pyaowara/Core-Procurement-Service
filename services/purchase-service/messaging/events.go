@@ -15,8 +15,9 @@ const (
 	EventGoodsReceived      = "goods.received"
 
 	// Events subscribed from other services
-	EventApprovalCompleted = "approval.completed"
-	EventApprovalRejected  = "approval.rejected"
+	EventApprovalCompleted     = "approval.completed"
+	EventApprovalRejected      = "approval.rejected"
+	EventInventoryUpdateFailed = "inventory.update.failed"
 )
 
 // PRReadyForApprovalEvent is published when PR is submitted and ready for approval
@@ -97,6 +98,14 @@ type GoodsReceivedItem struct {
 	ItemName    string `json:"item_name"`
 	Description string `json:"description"`
 	Quantity    int    `json:"quantity"`
+}
+
+// InventoryUpdateFailedEvent is published by inventory-service when it fails to update inventory
+type InventoryUpdateFailedEvent struct {
+	POID      uint      `json:"po_id"`
+	PONumber  string    `json:"po_number"`
+	Reason    string    `json:"reason"`
+	Timestamp time.Time `json:"timestamp"`
 }
 
 // Helper function to marshal events to JSON

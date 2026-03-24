@@ -155,8 +155,11 @@ services:
       PORT: "6768"
       DB_DSN: "host=inventory-db user=${POSTGRES_USER:-postgres} password=${POSTGRES_PASSWORD:-postgres} dbname=inventory_db port=5432 sslmode=disable"
       JWT_SECRET: "${JWT_SECRET:-super-secret-jwt-key-change-me}"
+      RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"
     depends_on:
       inventory-db:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
 
   purchase-service:
@@ -206,7 +209,7 @@ services:
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
       interval: 5s
       timeout: 5s
       retries: 5
