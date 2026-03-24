@@ -59,25 +59,24 @@ func SubscribeToApprovalEvents() {
 	}
 }
 
-// SubscribeToInventoryEvents listens for inventory events (for future use)
+// SubscribeToInventoryEvents listens for inventory events from inventory-service.
+// Handles: inventory.update.failed — marks the affected PO as FAILED.
 func SubscribeToInventoryEvents() {
-	// Declare queue
-	q, err := messaging.MQClient.DeclareQueue("purchase-inventory-queue")
+	q, err := messaging.MQClient.DeclareQueue("inventory-goods-received-queue")
 	if err != nil {
 		log.Printf("failed to declare inventory queue: %v", err)
 		return
 	}
 
-	// You can bind to additional inventory events here if needed
-	// For now, just demonstrate the structure
-	if err := messaging.MQClient.BindQueue(q.Name, messaging.ExchangeName, "inventory.*"); err != nil {
-		log.Printf("failed to bind inventory queue: %v", err)
+	if err := messaging.MQClient.BindQueue(q.Name, messaging.ExchangeName, messaging.EventInventoryUpdateFailed); err != nil {
+		log.Printf("failed to bind inventory.update.failed queue: %v", err)
+		return
 	}
 
 	msgs, err := messaging.MQClient.Channel.Consume(
 		q.Name,
 		"",
-		true,
+		true, // auto-ack
 		false,
 		false,
 		false,
@@ -90,8 +89,34 @@ func SubscribeToInventoryEvents() {
 
 	log.Println("Listening for inventory events...")
 	for msg := range msgs {
-		log.Printf("Received inventory event: %s", string(msg.Body))
+		var event messaging.InventoryUpdateFailedEvent
+		if err := json.Unmarshal(msg.Body, &event); err != nil {
+			log.Printf("failed to unmarshal inventory event: %v", err)
+			continue
+		}
+		if event.POID != 0 {
+			handleInventoryUpdateFailed(event)
+		}
 	}
+}
+
+// handleInventoryUpdateFailed marks the PO as FAILED when inventory-service reports an error.
+func handleInventoryUpdateFailed(event messaging.InventoryUpdateFailedEvent) {
+	log.Printf("Handling inventory update failure for PO ID: %d, reason: %s", event.POID, event.Reason)
+
+	var po models.PurchaseOrder
+	if err := config.DB.First(&po, event.POID).Error; err != nil {
+		log.Printf("failed to find PO %d: %v", event.POID, err)
+		return
+	}
+
+	po.Status = models.POStatusFailed
+	if err := config.DB.Save(&po).Error; err != nil {
+		log.Printf("failed to update PO %d status to FAILED: %v", event.POID, err)
+		return
+	}
+
+	log.Printf("PO %d status updated to FAILED due to inventory update failure", event.POID)
 }
 
 // handleApprovalCompleted updates PR status to APPROVED
