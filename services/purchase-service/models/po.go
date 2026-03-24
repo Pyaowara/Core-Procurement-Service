@@ -12,6 +12,7 @@ type POStatus string
 const (
 	POStatusSent      POStatus = "SENT"
 	POStatusCompleted POStatus = "COMPLETED"
+	POStatusFailed    POStatus = "FAILED"
 )
 
 type PurchaseOrder struct {
