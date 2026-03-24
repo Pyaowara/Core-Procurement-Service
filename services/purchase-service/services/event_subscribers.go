@@ -62,7 +62,7 @@ func SubscribeToApprovalEvents() {
 // SubscribeToInventoryEvents listens for inventory events from inventory-service.
 // Handles: inventory.update.failed — marks the affected PO as FAILED.
 func SubscribeToInventoryEvents() {
-	q, err := messaging.MQClient.DeclareQueue("purchase-inventory-queue")
+	q, err := messaging.MQClient.DeclareQueue("inventory-goods-received-queue")
 	if err != nil {
 		log.Printf("failed to declare inventory queue: %v", err)
 		return
