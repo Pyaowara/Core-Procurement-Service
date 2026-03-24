@@ -31,22 +31,11 @@ func ConnectDatabase() {
 	migrator.AutoMigrate(
 		&models.PurchaseRequest{},
 		&models.PRItem{},
-		&models.InventorySnapshot{},
 		&models.PurchaseOrder{},
 		&models.POItem{},
 		&models.GoodsReceived{},
 		&models.Vendor{},
 	)
-
-	// Clean up InventorySnapshot table - remove columns not in current model
-	// This ensures the table matches the model definition exactly
-	if migrator.HasTable(&models.InventorySnapshot{}) {
-		// Drop any extra columns that shouldn't be there
-		if migrator.HasColumn(&models.InventorySnapshot{}, "sku") {
-			log.Println("Removing SKU column from inventory_snapshots table...")
-			migrator.DropColumn(&models.InventorySnapshot{}, "sku")
-		}
-	}
 
 	DB = db
 }
