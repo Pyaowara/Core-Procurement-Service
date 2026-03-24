@@ -92,6 +92,14 @@ func ValidatePRItemRequest(item CreatePRItemRequest, index int) error {
 		if discountUnit != "%" && discountUnit != "BAHT" {
 			return fmt.Errorf("item %d: discount_unit must be either '%s' or 'BAHT' (got: %s)", index+1, "%", discountUnit)
 		}
+
+		// If discount unit is BAHT, validate that discount doesn't exceed subtotal
+		if discountUnit == "BAHT" {
+			subtotal := float64(item.Quantity) * item.PricePerUnit
+			if item.Discount > subtotal {
+				return fmt.Errorf("item %d: BAHT discount (%.2f) cannot exceed item subtotal (%.2f)", index+1, item.Discount, subtotal)
+			}
+		}
 	}
 
 	// Validate RequiredDate is not empty

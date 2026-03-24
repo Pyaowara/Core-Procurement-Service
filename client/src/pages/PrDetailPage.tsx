@@ -178,7 +178,10 @@ export default function PrDetailPage() {
                                 Edit
                             </Button>
                         )}
-                        <Badge variant={getStatusColor(pr.Status)} className="text-base px-3 py-1">
+                        <Badge 
+                            variant={getStatusColor(pr.Status)} 
+                            className={`text-base px-3 py-1 ${pr.Status === "PENDING" ? "bg-amber-100 text-amber-900 border-amber-300" : ""}`}
+                        >
                             {pr.Status}
                         </Badge>
                     </div>

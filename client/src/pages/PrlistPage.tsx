@@ -147,7 +147,10 @@ export default function PrListPage() {
                                     <TableCell>{pr.Department}</TableCell>
                                     <TableCell>{pr.Purpose}</TableCell>
                                     <TableCell>
-                                        <Badge variant={getStatusColor(pr.Status)}>
+                                        <Badge 
+                                            variant={getStatusColor(pr.Status)}
+                                            className={pr.Status === "PENDING" ? "bg-amber-100 text-amber-900 border-amber-300" : ""}
+                                        >
                                             {pr.Status}
                                         </Badge>
                                     </TableCell>
