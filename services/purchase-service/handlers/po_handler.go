@@ -50,7 +50,8 @@ func CalculateTotalPrice(quantity int, pricePerUnit float64, discount float64, d
 }
 
 // ValidatePOItem validates that required fields are provided when PR Item values are empty
-// Returns validation error if required fields are missing
+// Also validates discount and total price calculations
+// Returns validation error if required fields are missing or invalid
 func ValidatePOItem(item CreatePOItem, prItem *models.PRItem, index int) error {
 	// Validate SKU - must be provided if PR Item SKU is empty
 	sku := item.SKU
@@ -79,7 +80,6 @@ func ValidatePOItem(item CreatePOItem, prItem *models.PRItem, index int) error {
 		return fmt.Errorf("item %d: description cannot be empty (must provide in request if PR Item Description is empty)", index+1)
 	}
 
-	// Validate discount for BAHT currency - must not exceed subtotal
 	// Get final values (request override or PR Item default)
 	quantity := prItem.Quantity
 	if item.Quantity != nil {
@@ -101,12 +101,46 @@ func ValidatePOItem(item CreatePOItem, prItem *models.PRItem, index int) error {
 		discount = *item.Discount
 	}
 
-	// If discount unit is BAHT, validate that discount doesn't exceed subtotal
+	// Validate quantity and price per unit are positive
+	if quantity <= 0 {
+		return fmt.Errorf("item %d: quantity must be greater than 0 (got: %d)", index+1, quantity)
+	}
+
+	if pricePerUnit <= 0 {
+		return fmt.Errorf("item %d: price_per_unit must be greater than 0 (got: %.2f)", index+1, pricePerUnit)
+	}
+
+	// Validate discount is not negative
+	if discount < 0 {
+		return fmt.Errorf("item %d: discount cannot be negative (got: %.2f)", index+1, discount)
+	}
+
+	// Validate discount unit is valid (if provided)
+	if discountUnit != "" && discountUnit != "%" && discountUnit != "BAHT" {
+		return fmt.Errorf("item %d: discount_unit must be either '%%' or 'BAHT' (got: %s)", index+1, discountUnit)
+	}
+
+	// Calculate subtotal for discount validation
+	subtotal := float64(quantity) * pricePerUnit
+
+	// Validate percentage discount is between 0-100
+	if discountUnit == "%" {
+		if discount < 0 || discount > 100 {
+			return fmt.Errorf("item %d: percentage discount must be between 0 and 100 (got: %.2f%%)", index+1, discount)
+		}
+	}
+
+	// Validate BAHT discount doesn't exceed subtotal
 	if discountUnit == "BAHT" {
-		subtotal := float64(quantity) * pricePerUnit
 		if discount > subtotal {
 			return fmt.Errorf("item %d: BAHT discount (%.2f) cannot exceed item subtotal (%.2f)", index+1, discount, subtotal)
 		}
+	}
+
+	// Calculate final total price and validate it's positive
+	totalPrice := CalculateTotalPrice(quantity, pricePerUnit, discount, discountUnit)
+	if totalPrice <= 0 {
+		return fmt.Errorf("item %d: total price must be greater than 0 (got: %.2f) - check discount value", index+1, totalPrice)
 	}
 
 	return nil
@@ -297,7 +331,7 @@ func GetPO(c *gin.Context) {
 	role, _ := c.Get("role")
 
 	var po models.PurchaseOrder
-	if err := config.DB.Preload("Items").First(&po, poID).Error; err != nil {
+	if err := config.DB.Preload("Items").Preload("Vendor").First(&po, poID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "PO not found"})
 		return
 	}
@@ -317,15 +351,12 @@ func GetPO(c *gin.Context) {
 func GetPOList(c *gin.Context) {
 	status := c.Query("status")
 	prID := c.Query("pr_id")
-	role, _ := c.Get("role")
 
 	var pos []models.PurchaseOrder
 	query := config.DB
 
-	// Non-PurchaseOfficer and non-Admin roles can only view non-deleted POs
-	if role.(string) != "PurchaseOfficer" && role.(string) != "Admin" {
-		query = query.Where("is_deleted = ?", false)
-	}
+	// Exclude deleted POs from list
+	query = query.Where("is_deleted = ?", false)
 
 	if status != "" {
 		query = query.Where("status = ?", status)
@@ -335,7 +366,7 @@ func GetPOList(c *gin.Context) {
 		query = query.Where("pr_id = ?", prID)
 	}
 
-	if err := query.Preload("Items").Find(&pos).Error; err != nil {
+	if err := query.Preload("Items").Preload("Vendor").Find(&pos).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve POs"})
 		return
 	}

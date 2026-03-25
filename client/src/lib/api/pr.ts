@@ -26,7 +26,7 @@ export interface PurchaseRequest {
     Department: string;
     Status: string;
     RequesterID: number;
-    isDeleted: boolean; // Flag to indicate if the PR is marked for deletion
+    IsDeleted: boolean;
     Items: PRItem[];
 }
 

@@ -196,6 +196,14 @@ func CreatePR(c *gin.Context) {
 		return
 	}
 
+	// Role-based access control: only employee, manager, and admin can create PRs
+	userRole, _ := c.Get("user_role")
+	roleStr, ok := userRole.(string)
+	if !ok || (roleStr != "employee" && roleStr != "manager" && roleStr != "admin") {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Only employees, managers, and admins can create Purchase Requests"})
+		return
+	}
+
 	userID, _ := c.Get("user_id")
 
 	// Validate items without inventory checks
