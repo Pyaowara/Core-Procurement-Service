@@ -187,11 +187,12 @@ func ApproveStep(instanceID uint, actorID uint, userRole string, comment string)
 	}
 
 	// Update step status
-	now := models.ApprovalAction{}
+	now := time.Now()
 	if err := config.DB.Model(&currentStep).
 		Updates(map[string]interface{}{
-			"status":    models.ApprovalStatusApproved,
-			"action_at": now.CreatedAt,
+			"status":      models.ApprovalStatusApproved,
+			"approver_id": actorID,
+			"action_at":   now,
 		}).Error; err != nil {
 		log.Printf("failed to update step status: %v", err)
 		return nil, err
@@ -275,11 +276,12 @@ func RejectStep(instanceID uint, actorID uint, userRole string, comment string) 
 	}
 
 	// Update step status
-	now := models.ApprovalAction{}
+	now := time.Now()
 	if err := config.DB.Model(&currentStep).
 		Updates(map[string]interface{}{
-			"status":    models.ApprovalStatusRejected,
-			"action_at": now.CreatedAt,
+			"status":      models.ApprovalStatusRejected,
+			"approver_id": actorID,
+			"action_at":   now,
 		}).Error; err != nil {
 		log.Printf("failed to update step status: %v", err)
 		return nil, err
