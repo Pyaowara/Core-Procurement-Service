@@ -1,7 +1,6 @@
 package models
 
 import (
-	"encoding/json"
 	"time"
 
 	"gorm.io/gorm"
@@ -49,14 +48,4 @@ type PRItem struct {
 	StockCheckAt         time.Time // When stock was checked
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
-}
-
-// InventorySnapshot stores all inventory items list in JSONB
-// Snapshots are kept as history - when inventory service fails, uses the latest snapshot as fallback
-type InventorySnapshot struct {
-	ID           uint            `gorm:"primaryKey"`
-	SnapshotData json.RawMessage `gorm:"type:jsonb"` // Contains list of all inventory items: [{id, sku, name, description, quantity}, ...]
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	DeletedAt    gorm.DeletedAt `gorm:"index"`
 }
