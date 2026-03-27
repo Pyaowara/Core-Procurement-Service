@@ -12,6 +12,7 @@ import (
 	"github.com/core-procurement/purchase-service/config"
 	"github.com/core-procurement/purchase-service/messaging"
 	"github.com/core-procurement/purchase-service/models"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -19,25 +20,25 @@ import (
 type CreatePRRequest struct {
 	PRNumber   string                `json:"pr_number"`
 	Department string                `json:"department" binding:"required"`
-	Purpose    string                `json:"purpose"` // Purpose of the purchase request
+	Purpose    string                `json:"purpose" binding:"required"` // Purpose of the purchase request
 	Items      []CreatePRItemRequest `json:"items" binding:"required"`
 }
 
 type CreatePRItemRequest struct {
-	SKU          string  `json:"sku" binding:"required"`         // Stock Keeping Unit
+	SKU          string  `json:"sku"`                            // Stock Keeping Unit - optional
 	ItemName     string  `json:"item_name" binding:"required"`   // Item Name
 	Description  string  `json:"description" binding:"required"` // Item Description
 	Quantity     int     `json:"quantity" binding:"required,gt=0"`
-	PricePerUnit float64 `json:"price_per_unit"`
-	Discount     float64 `json:"discount"`
-	DiscountUnit string  `json:"discount_unit"`
-	RequiredDate string  `json:"required_date"`
+	PricePerUnit float64 `json:"price_per_unit" binding:"required,gt=0"`
+	Discount     float64 `json:"discount" binding:"min=0"`         // Discount amount (0 or greater)
+	DiscountUnit string  `json:"discount_unit"`                    // Discount unit (e.g., percentage, fixed) - required only if discount > 0
+	RequiredDate string  `json:"required_date" binding:"required"` // Required delivery date
 }
 
 type UpdatePRRequest struct {
-	Department string                `json:"department"`
-	Purpose    string                `json:"purpose"`
-	Items      []CreatePRItemRequest `json:"items"`
+	Department string                `json:"department" binding:"required"`
+	Purpose    string                `json:"purpose" binding:"required"`
+	Items      []CreatePRItemRequest `json:"items" binding:"required"`
 }
 
 // GeneratePRNumber generates a unique PR number based on PR ID and timestamp
@@ -47,22 +48,118 @@ func GeneratePRNumber(prID uint) string {
 	return fmt.Sprintf("PR-%s-%06d", timestamp, prID)
 }
 
-// CheckAndCreatePRItems creates PR items from request data without inventory validation
+// ValidatePRItemRequest validates all fields in a PR item request for empty/whitespace values
+// SKU is now optional - no validation required for SKU
+// Returns validation error if any field is invalid
+func ValidatePRItemRequest(item CreatePRItemRequest, index int) error {
+	// SKU is optional - no validation required
+
+	// Validate ItemName is not empty or whitespace
+	if strings.TrimSpace(item.ItemName) == "" {
+		return fmt.Errorf("item %d: item_name cannot be empty or whitespace", index+1)
+	}
+
+	// Validate Description is not empty or whitespace
+	if strings.TrimSpace(item.Description) == "" {
+		return fmt.Errorf("item %d: description cannot be empty or whitespace", index+1)
+	}
+
+	// Validate Quantity is greater than 0
+	if item.Quantity <= 0 {
+		return fmt.Errorf("item %d: quantity must be greater than 0", index+1)
+	}
+
+	// Validate PricePerUnit is greater than 0
+	if item.PricePerUnit <= 0 {
+		return fmt.Errorf("item %d: price_per_unit must be greater than 0", index+1)
+	}
+
+	// Validate Discount is not negative
+	if item.Discount < 0 {
+		return fmt.Errorf("item %d: discount cannot be negative", index+1)
+	}
+
+	// If discount is provided (> 0), DiscountUnit must not be empty
+	if item.Discount > 0 && strings.TrimSpace(item.DiscountUnit) == "" {
+		return fmt.Errorf("item %d: discount_unit cannot be empty when discount is provided", index+1)
+	}
+
+	// If discount is 0, DiscountUnit is optional (can be empty)
+
+	// Validate DiscountUnit - only allow "%" or "BAHT" when provided
+	if strings.TrimSpace(item.DiscountUnit) != "" {
+		discountUnit := strings.TrimSpace(item.DiscountUnit)
+		if discountUnit != "%" && discountUnit != "BAHT" {
+			return fmt.Errorf("item %d: discount_unit must be either '%s' or 'BAHT' (got: %s)", index+1, "%", discountUnit)
+		}
+
+		// If discount unit is BAHT, validate that discount doesn't exceed subtotal
+		if discountUnit == "BAHT" {
+			subtotal := float64(item.Quantity) * item.PricePerUnit
+			if item.Discount > subtotal {
+				return fmt.Errorf("item %d: BAHT discount (%.2f) cannot exceed item subtotal (%.2f)", index+1, item.Discount, subtotal)
+			}
+		}
+	}
+
+	// Validate RequiredDate is not empty
+	if strings.TrimSpace(item.RequiredDate) == "" {
+		return fmt.Errorf("item %d: required_date cannot be empty", index+1)
+	}
+
+	// Validate RequiredDate format is valid
+	_, err := time.Parse("2006-01-02", item.RequiredDate)
+	if err != nil {
+		return fmt.Errorf("item %d: required_date must be in format YYYY-MM-DD (got: %s)", index+1, item.RequiredDate)
+	}
+
+	return nil
+}
+
+// CheckAndCreatePRItems validates items without inventory checks - SKU is optional
 // Returns:
 // - items to create with data from request
 // - item validation details for response
-// - error if no valid items provided
-func CheckAndCreatePRItems(pr *models.PurchaseRequest, items []CreatePRItemRequest, authToken string) ([]models.PRItem, map[string]interface{}, error) {
+// - error if any items have invalid fields
+func CheckAndCreatePRItems(pr *models.PurchaseRequest, items []CreatePRItemRequest) ([]models.PRItem, map[string]interface{}, error) {
 	itemCheckDetails := make(map[string]interface{})
 	var prItemsToCreate []models.PRItem
+	var invalidItems []string
 
-	for _, item := range items {
-		// Create PR item from request data without inventory validation
+	for i, item := range items {
+		// Validate all fields in the item (no SKU check required)
+		if validationErr := ValidatePRItemRequest(item, i); validationErr != nil {
+			log.Printf("Item validation failed for item %d: %v", i+1, validationErr)
+			itemKey := fmt.Sprintf("item_%d", i)
+			itemCheckDetails[itemKey] = gin.H{
+				"sku":              item.SKU,
+				"item_name":        item.ItemName,
+				"description":      item.Description,
+				"quantity":         item.Quantity,
+				"status":           "failed",
+				"validation_error": validationErr.Error(),
+			}
+			invalidItems = append(invalidItems, fmt.Sprintf("item %d: %s", i+1, validationErr.Error()))
+			continue
+		}
+
+		// Validation passed - log and record
+		log.Printf("Item validation passed for item %d", i+1)
+		itemKey := fmt.Sprintf("item_%d", i)
+		itemCheckDetails[itemKey] = gin.H{
+			"sku":         item.SKU,
+			"item_name":   item.ItemName,
+			"description": item.Description,
+			"quantity":    item.Quantity,
+			"status":      "valid",
+		}
+
+		// Create PR item - SKU is optional
 		requiredDate, _ := time.Parse("2006-01-02", item.RequiredDate)
 		totalPrice := CalculateTotalPrice(item.Quantity, item.PricePerUnit, item.Discount, item.DiscountUnit)
 		prItem := models.PRItem{
 			PRID:         pr.ID,
-			SKU:          item.SKU,
+			SKU:          item.SKU, // Can be empty
 			ItemName:     item.ItemName,
 			Description:  item.Description,
 			Quantity:     item.Quantity,
@@ -73,25 +170,24 @@ func CheckAndCreatePRItems(pr *models.PurchaseRequest, items []CreatePRItemReque
 			RequiredDate: requiredDate,
 		}
 		prItemsToCreate = append(prItemsToCreate, prItem)
+	}
 
-		// Add to check details
-		itemCheckDetails[item.SKU] = gin.H{
-			"item_name":   item.ItemName,
-			"description": item.Description,
-			"quantity":    item.Quantity,
-			"status":      "created",
-		}
+	// If any validations failed, fail the entire request
+	if len(invalidItems) > 0 {
+		errorMsg := fmt.Sprintf("Item validation failed: %s", strings.Join(invalidItems, "; "))
+		log.Printf("%s", errorMsg)
+		return nil, itemCheckDetails, fmt.Errorf("%s", errorMsg)
 	}
 
 	if len(prItemsToCreate) == 0 {
-		return nil, itemCheckDetails, fmt.Errorf("no valid items to create")
+		return nil, itemCheckDetails, fmt.Errorf("no valid items found")
 	}
 
 	return prItemsToCreate, itemCheckDetails, nil
 }
 
 // CreatePR creates a new Purchase Request in DRAFT status with transaction
-// Fetches item details from inventory service by SKU
+// No inventory validation - SKU is optional
 // Uses transaction to ensure PR and PR items are created together
 func CreatePR(c *gin.Context) {
 	var req CreatePRRequest
@@ -100,23 +196,28 @@ func CreatePR(c *gin.Context) {
 		return
 	}
 
+	// Role-based access control: only employee, manager, and admin can create PRs
+	userRole, _ := c.Get("user_role")
+	roleStr, ok := userRole.(string)
+	if !ok || (roleStr != "employee" && roleStr != "manager" && roleStr != "admin") {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Only employees, managers, and admins can create Purchase Requests"})
+		return
+	}
+
 	userID, _ := c.Get("user_id")
 
-	// Get JWT token from Authorization header for inventory service calls
-	authToken := c.GetHeader("Authorization")
-	authToken = strings.TrimPrefix(authToken, "Bearer ")
-
-	// Check inventory and create items by fetching from inventory service
+	// Validate items without inventory checks
 	tempPR := models.PurchaseRequest{
 		RequesterID: userID.(uint),
 		Department:  req.Department,
 		Purpose:     req.Purpose,
 		Status:      models.PRStatusDraft,
 	}
-	prItemsToCreate, itemCheckDetails, err := CheckAndCreatePRItems(&tempPR, req.Items, authToken)
+	prItemsToCreate, itemCheckDetails, err := CheckAndCreatePRItems(&tempPR, req.Items)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error":                   "failed to create PR items - " + err.Error(),
+			"error":                   err.Error(),
+			"message":                 "PR creation failed - validation error on items",
 			"item_validation_summary": itemCheckDetails,
 		})
 		return
@@ -186,13 +287,15 @@ func UpdatePR(c *gin.Context) {
 		return
 	}
 
-	// Get JWT token from Authorization header for inventory service calls
-	authToken := c.GetHeader("Authorization")
-	authToken = strings.TrimPrefix(authToken, "Bearer ")
-
 	var pr models.PurchaseRequest
 	if err := config.DB.First(&pr, prID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "PR not found"})
+		return
+	}
+
+	// Check if PR is deleted
+	if pr.IsDeleted {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot update deleted PR"})
 		return
 	}
 
@@ -204,12 +307,13 @@ func UpdatePR(c *gin.Context) {
 
 	// If items are being updated, validate before transaction
 	if len(req.Items) > 0 {
-		// Check inventory and create items BEFORE using transaction
+		// Validate items without inventory checks
 		tempPR := models.PurchaseRequest{ID: pr.ID}
-		prItemsToCreate, itemCheckDetails, err := CheckAndCreatePRItems(&tempPR, req.Items, authToken)
+		prItemsToCreate, itemCheckDetails, err := CheckAndCreatePRItems(&tempPR, req.Items)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
-				"error":                   "failed to create PR items - " + err.Error(),
+				"error":                   err.Error(),
+				"message":                 "PR update failed - validation error on items",
 				"item_validation_summary": itemCheckDetails,
 			})
 			return
@@ -344,6 +448,9 @@ func GetPRList(c *gin.Context) {
 		return
 	}
 
+	// Don't show deleted PRs
+	query = query.Where("is_deleted = ?", false)
+
 	if status != "" {
 		query = query.Where("status = ?", status)
 	}
@@ -367,6 +474,12 @@ func SubmitPR(c *gin.Context) {
 	var pr models.PurchaseRequest
 	if err := config.DB.Preload("Items").First(&pr, prID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "PR not found"})
+		return
+	}
+
+	// Check if PR is deleted
+	if pr.IsDeleted {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot submit deleted PR"})
 		return
 	}
 
@@ -470,6 +583,6 @@ func DeletePR(c *gin.Context) {
 
 	pr.IsDeleted = true
 	config.DB.Save(&pr)
-
+	log.Printf("Soft deleted PR %d", pr.ID)
 	c.JSON(http.StatusOK, gin.H{"message": "PR deleted successfully"})
 }

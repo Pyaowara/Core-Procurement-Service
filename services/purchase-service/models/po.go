@@ -21,6 +21,7 @@ type PurchaseOrder struct {
 	PONumber  string   `gorm:"unique;not null"`
 	PRID      uint     `gorm:"not null;index"`
 	VendorID  uint     `gorm:"not null;index"`
+	Vendor    *Vendor  `gorm:"foreignKey:VendorID" json:"Vendor,omitempty"`
 	Purpose   string   `gorm:"type:text"` // Purpose of the purchase order
 	Status    POStatus `gorm:"type:varchar(20);default:'SENT'"`
 	CreditDay int      `gorm:"default:0"`

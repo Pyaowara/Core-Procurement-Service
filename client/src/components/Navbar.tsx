@@ -11,7 +11,10 @@ import {
 
 const navItems = [
     { to: "/catalog", label: "Catalog", roles: null },
+    { to: "/pr", label: "Purchase Requests", roles: null },
+    { to: "/po", label: "Purchase Orders", roles: ["PurchaseOfficer", "Admin"] },
     { to: "/inventory", label: "Inventory", roles: ["PurchaseOfficer"] },
+    { to: "/vendor", label: "Vendors", roles: ["Admin", "PurchaseOfficer"] },
     { to: "/admin", label: "Users", roles: ["Admin"] },
 ];
 

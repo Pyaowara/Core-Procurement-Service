@@ -89,14 +89,14 @@ func SetupRouter() *gin.Engine {
 		po.DELETE("/:id", middleware.PurchaseOfficerRequired(), handlers.DeletePO)
 	}
 
-	// Vendor management - for Admin users
+	// Vendor management - for PurchaseOfficer users
 	vendor := r.Group("/vendor")
 	{
-		vendor.POST("", middleware.AdminOnly(), handlers.CreateVendor)
+		vendor.POST("", middleware.PurchaseOfficerRequired(), handlers.CreateVendor)
 		vendor.GET("", middleware.AuthRequired(), handlers.GetVendorList)
 		vendor.GET("/:id", middleware.AuthRequired(), handlers.GetVendor)
-		vendor.PUT("/:id", middleware.AdminOnly(), handlers.UpdateVendor)
-		vendor.DELETE("/:id", middleware.AdminOnly(), handlers.DeleteVendor)
+		vendor.PUT("/:id", middleware.PurchaseOfficerRequired(), handlers.UpdateVendor)
+		vendor.DELETE("/:id", middleware.PurchaseOfficerRequired(), handlers.DeleteVendor)
 	}
 
 	return r

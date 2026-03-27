@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+
 	"time"
 
 	"github.com/core-procurement/purchase-service/config"
@@ -24,12 +25,14 @@ type CreatePORequest struct {
 
 type CreatePOItem struct {
 	PRItemID     uint     `json:"pr_item_id" binding:"required"` // Which PR Item to use
+	SKU          string   `json:"sku"`                           // Required if PR Item SKU is empty
+	ItemName     string   `json:"item_name"`                     // Required if PR Item ItemName is empty
+	Description  string   `json:"description"`                   // Required if PR Item Description is empty
 	Quantity     *int     `json:"quantity"`                      // Optional: override from PR Item
 	PricePerUnit *float64 `json:"price_per_unit"`                // Optional: override from PR Item
 	Discount     *float64 `json:"discount"`                      // Optional: override from PR Item
 	DiscountUnit *string  `json:"discount_unit"`                 // Optional: override from PR Item
 	RequiredDate *string  `json:"required_date"`                 // Optional: override from PR Item
-	// SKU, ItemName, Description, TotalPrice are derived from PR Item or calculated
 }
 
 type ReceiveGoodsRequest struct {
@@ -44,6 +47,103 @@ func CalculateTotalPrice(quantity int, pricePerUnit float64, discount float64, d
 	}
 	// Discount in BAHT
 	return subtotal - discount
+}
+
+// ValidatePOItem validates that required fields are provided when PR Item values are empty
+// Also validates discount and total price calculations
+// Returns validation error if required fields are missing or invalid
+func ValidatePOItem(item CreatePOItem, prItem *models.PRItem, index int) error {
+	// Validate SKU - must be provided if PR Item SKU is empty
+	sku := item.SKU
+	if sku == "" {
+		sku = prItem.SKU
+	}
+	if sku == "" {
+		return fmt.Errorf("item %d: SKU cannot be empty (must provide in request if PR Item SKU is empty)", index+1)
+	}
+
+	// Validate ItemName - must be provided if PR Item ItemName is empty
+	itemName := item.ItemName
+	if itemName == "" {
+		itemName = prItem.ItemName
+	}
+	if itemName == "" {
+		return fmt.Errorf("item %d: item_name cannot be empty (must provide in request if PR Item ItemName is empty)", index+1)
+	}
+
+	// Validate Description - must be provided if PR Item Description is empty
+	description := item.Description
+	if description == "" {
+		description = prItem.Description
+	}
+	if description == "" {
+		return fmt.Errorf("item %d: description cannot be empty (must provide in request if PR Item Description is empty)", index+1)
+	}
+
+	// Get final values (request override or PR Item default)
+	quantity := prItem.Quantity
+	if item.Quantity != nil {
+		quantity = *item.Quantity
+	}
+
+	pricePerUnit := prItem.PricePerUnit
+	if item.PricePerUnit != nil {
+		pricePerUnit = *item.PricePerUnit
+	}
+
+	discountUnit := prItem.DiscountUnit
+	if item.DiscountUnit != nil {
+		discountUnit = *item.DiscountUnit
+	}
+
+	discount := prItem.Discount
+	if item.Discount != nil {
+		discount = *item.Discount
+	}
+
+	// Validate quantity and price per unit are positive
+	if quantity <= 0 {
+		return fmt.Errorf("item %d: quantity must be greater than 0 (got: %d)", index+1, quantity)
+	}
+
+	if pricePerUnit <= 0 {
+		return fmt.Errorf("item %d: price_per_unit must be greater than 0 (got: %.2f)", index+1, pricePerUnit)
+	}
+
+	// Validate discount is not negative
+	if discount < 0 {
+		return fmt.Errorf("item %d: discount cannot be negative (got: %.2f)", index+1, discount)
+	}
+
+	// Validate discount unit is valid (if provided)
+	if discountUnit != "" && discountUnit != "%" && discountUnit != "BAHT" {
+		return fmt.Errorf("item %d: discount_unit must be either '%%' or 'BAHT' (got: %s)", index+1, discountUnit)
+	}
+
+	// Calculate subtotal for discount validation
+	subtotal := float64(quantity) * pricePerUnit
+
+	// Validate percentage discount is between 0-100
+	if discountUnit == "%" {
+		if discount < 0 || discount > 100 {
+			return fmt.Errorf("item %d: percentage discount must be between 0 and 100 (got: %.2f%%)", index+1, discount)
+		}
+	}
+
+	// Validate BAHT discount doesn't exceed subtotal
+	if discountUnit == "BAHT" {
+		if discount > subtotal {
+			return fmt.Errorf("item %d: BAHT discount (%.2f) cannot exceed item subtotal (%.2f)", index+1, discount, subtotal)
+		}
+	}
+
+	// Calculate final total price and validate it's positive
+	totalPrice := CalculateTotalPrice(quantity, pricePerUnit, discount, discountUnit)
+	if totalPrice <= 0 {
+		return fmt.Errorf("item %d: total price must be greater than 0 (got: %.2f) - check discount value", index+1, totalPrice)
+	}
+
+	return nil
 }
 
 // GeneratePO creates a Purchase Order from an approved PR with transaction support
@@ -93,6 +193,18 @@ func GeneratePO(c *gin.Context) {
 		return
 	}
 
+	// Validate all PO items before creating - check SKU, ItemName, Description requirements
+	for i, poItem := range req.POItems {
+		prItem := prItemsMap[poItem.PRItemID]
+		if err := ValidatePOItem(poItem, prItem, i); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   err.Error(),
+				"message": "PO creation failed - validation error on items",
+			})
+			return
+		}
+	}
+
 	dueDate, _ := time.Parse("2006-01-02", req.DueDate)
 
 	// Use transaction to create PO and PO items together
@@ -127,6 +239,21 @@ func GeneratePO(c *gin.Context) {
 			prItem := prItemsMap[reqItem.PRItemID]
 
 			// Use request values or default to PR Item values
+			sku := reqItem.SKU
+			if sku == "" {
+				sku = prItem.SKU
+			}
+
+			itemName := reqItem.ItemName
+			if itemName == "" {
+				itemName = prItem.ItemName
+			}
+
+			description := reqItem.Description
+			if description == "" {
+				description = prItem.Description
+			}
+
 			quantity := prItem.Quantity
 			if reqItem.Quantity != nil {
 				quantity = *reqItem.Quantity
@@ -160,9 +287,9 @@ func GeneratePO(c *gin.Context) {
 
 			poItem := models.POItem{
 				POID:         po.ID,
-				SKU:          prItem.SKU,
-				ItemName:     prItem.ItemName,
-				Description:  prItem.Description,
+				SKU:          sku,
+				ItemName:     itemName,
+				Description:  description,
 				Quantity:     quantity,
 				PricePerUnit: pricePerUnit,
 				Discount:     discount,
@@ -204,7 +331,7 @@ func GetPO(c *gin.Context) {
 	role, _ := c.Get("role")
 
 	var po models.PurchaseOrder
-	if err := config.DB.Preload("Items").First(&po, poID).Error; err != nil {
+	if err := config.DB.Preload("Items").Preload("Vendor").First(&po, poID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "PO not found"})
 		return
 	}
@@ -224,15 +351,12 @@ func GetPO(c *gin.Context) {
 func GetPOList(c *gin.Context) {
 	status := c.Query("status")
 	prID := c.Query("pr_id")
-	role, _ := c.Get("role")
 
 	var pos []models.PurchaseOrder
 	query := config.DB
 
-	// Non-PurchaseOfficer and non-Admin roles can only view non-deleted POs
-	if role.(string) != "PurchaseOfficer" && role.(string) != "Admin" {
-		query = query.Where("is_deleted = ?", false)
-	}
+	// Exclude deleted POs from list
+	query = query.Where("is_deleted = ?", false)
 
 	if status != "" {
 		query = query.Where("status = ?", status)
@@ -242,7 +366,7 @@ func GetPOList(c *gin.Context) {
 		query = query.Where("pr_id = ?", prID)
 	}
 
-	if err := query.Preload("Items").Find(&pos).Error; err != nil {
+	if err := query.Preload("Items").Preload("Vendor").Find(&pos).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve POs"})
 		return
 	}
