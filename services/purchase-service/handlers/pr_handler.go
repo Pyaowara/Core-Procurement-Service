@@ -25,12 +25,12 @@ type CreatePRRequest struct {
 }
 
 type CreatePRItemRequest struct {
-	SKU          string  `json:"sku"`                            // Stock Keeping Unit - optional
-	ItemName     string  `json:"item_name" binding:"required"`   
-	Description  string  `json:"description" binding:"required"` 
+	SKU          string  `json:"sku"` // Stock Keeping Unit - optional
+	ItemName     string  `json:"item_name" binding:"required"`
+	Description  string  `json:"description" binding:"required"`
 	Quantity     int     `json:"quantity" binding:"required,gt=0"`
 	PricePerUnit float64 `json:"price_per_unit" binding:"required,gt=0"`
-	Discount     float64 `json:"discount" binding:"min=0"`         
+	Discount     float64 `json:"discount" binding:"min=0"`
 	DiscountUnit string  `json:"discount_unit"`                    // Discount unit (e.g., percentage, %) - required only if discount > 0
 	RequiredDate string  `json:"required_date" binding:"required"` // Required delivery date
 }
@@ -50,12 +50,11 @@ func GeneratePRNumber(prID uint) string {
 
 // ValidatePRItemRequest validates all fields in a PR item request for empty/whitespace values
 func ValidatePRItemRequest(item CreatePRItemRequest, index int) error {
-	
+
 	if strings.TrimSpace(item.ItemName) == "" {
 		return fmt.Errorf("item %d: item_name cannot be empty or whitespace", index+1)
 	}
 
-	
 	if strings.TrimSpace(item.Description) == "" {
 		return fmt.Errorf("item %d: description cannot be empty or whitespace", index+1)
 	}
@@ -87,10 +86,15 @@ func ValidatePRItemRequest(item CreatePRItemRequest, index int) error {
 		}
 
 		// If discount unit is BAHT, validate that discount doesn't exceed subtotal
-		if discountUnit == "BAHT" {
+		switch discountUnit {
+		case "BAHT":
 			subtotal := float64(item.Quantity) * item.PricePerUnit
 			if item.Discount > subtotal {
 				return fmt.Errorf("item %d: BAHT discount (%.2f) cannot exceed item subtotal (%.2f)", index+1, item.Discount, subtotal)
+			}
+		case "%":
+			if item.Discount > 100 {
+				return fmt.Errorf("item %d: percentage discount cannot exceed 100%% (got: %.2f%%)", index+1, item.Discount)
 			}
 		}
 	}
