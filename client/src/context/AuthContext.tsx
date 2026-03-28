@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { authApi } from "@/lib/api/index";
 
 interface AuthUser {
-    id: number;
+    user_id: number;
     username: string;
     first_name: string;
     last_name: string;

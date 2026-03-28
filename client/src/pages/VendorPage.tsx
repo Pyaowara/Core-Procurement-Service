@@ -19,7 +19,7 @@ import {
     DialogFooter,
     DialogTrigger,
 } from "@/components/ui/dialog";
-import { toast } from "sonner";
+import { toast } from "react-hot-toast";
 
 const emptyForm = { name: "", address: "", tax_id: "" };
 

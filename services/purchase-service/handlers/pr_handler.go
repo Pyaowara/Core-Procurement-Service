@@ -197,9 +197,9 @@ func CreatePR(c *gin.Context) {
 	}
 
 	// Role-based access control: only employee, manager, and admin can create PRs
-	userRole, _ := c.Get("user_role")
+	userRole, exists := c.Get("role")
 	roleStr, ok := userRole.(string)
-	if !ok || (roleStr != "employee" && roleStr != "manager" && roleStr != "admin") {
+	if !exists || !ok || !strings.EqualFold(roleStr, "Employee") && !strings.EqualFold(roleStr, "Manager") && !strings.EqualFold(roleStr, "Admin") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Only employees, managers, and admins can create Purchase Requests"})
 		return
 	}

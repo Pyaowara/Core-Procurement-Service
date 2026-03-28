@@ -7,19 +7,20 @@ import InventoryPage from "@/pages/InventoryPage";
 import AdminPage from "@/pages/AdminPage";
 import ProfilePage from "@/pages/ProfilePage";
 import CatalogPage from "@/pages/CatalogPage";
-import PrListPage from "@/pages/PrListPage";
+import PrListPage from "@/pages/PrlistPage";
 import PrDetailPage from "@/pages/PrDetailPage";
 import PoListPage from "@/pages/PolistPage";
 import PoDetailPage from "@/pages/PoDetailPage";
 import VendorPage from "@/pages/VendorPage";
 import RoleGuard from "@/components/RoleGuard";
-
+import { Toaster } from "react-hot-toast";
 function HomeRedirect() {
   const { user, loading } = useAuth();
   if (loading) return null;
   if (!user) return <Navigate to="/login" replace />;
   if (user.role === "Admin") return <Navigate to="/admin" replace />;
-  if (user.role === "PurchaseOfficer") return <Navigate to="/inventory" replace />;
+  if (user.role === "PurchaseOfficer")
+    return <Navigate to="/inventory" replace />;
   return <Navigate to="/catalog" replace />;
 }
 
@@ -27,6 +28,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <Toaster position="top-center" reverseOrder={false} />
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />

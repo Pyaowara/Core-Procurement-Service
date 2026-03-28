@@ -26,6 +26,7 @@ export interface PurchaseRequest {
     Department: string;
     Status: string;
     RequesterID: number;
+    WorkflowID: string;
     IsDeleted: boolean;
     Items: PRItem[];
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { prApi, type PurchaseRequest } from "@/lib/api/pr";
+import { approvalApi, type ApprovalInstance } from "@/lib/api/approval";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,13 +18,15 @@ import { SentIcon, Delete02Icon, ShoppingCart02Icon } from "@hugeicons/core-free
 import PrForm from "@/components/PrForm";
 import PoForm from "@/components/PoForm";
 import ConfirmModal from "@/components/ConfirmModal";
-import { toast } from "sonner";
+import ApprovalStatusDisplay from "@/components/ApprovalStatusDisplay";
+import { toast } from "react-hot-toast";
 
 export default function PrDetailPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { user } = useAuth();
     const [pr, setPr] = useState<PurchaseRequest | null>(null);
+    const [approval, setApproval] = useState<ApprovalInstance | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [isEditFormOpen, setIsEditFormOpen] = useState(false);
@@ -46,6 +49,20 @@ export default function PrDetailPage() {
             const data = await prApi.getPurchaseRequestById(Number(id));
             setPr(data);
             console.log("PR loaded:", data);
+
+            // Load approval status if PR is not in DRAFT state
+            if (data.Status !== "DRAFT" && data.WorkflowID) {
+                try {
+                    const approvalData = await approvalApi.getApprovalByWorkflow(data.WorkflowID);
+                    setApproval(approvalData);
+                    console.log("Approval status loaded:", approvalData);
+                } catch (approvalError) {
+                    console.error("Failed to load approval status:", approvalError);
+                    // Don't fail the whole page if approval status can't be loaded
+                }
+            } else {
+                setApproval(null);
+            }
         } catch (err: unknown) {
             const errorMsg = err instanceof Error ? err.message : "Failed to load PR details";
             console.error("Error loading PR:", err);
@@ -215,6 +232,9 @@ export default function PrDetailPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Approval Status */}
+            {approval && <ApprovalStatusDisplay approval={approval} onActionComplete={load} />}
 
             {/* PR Items */}
             <div className="mb-8">

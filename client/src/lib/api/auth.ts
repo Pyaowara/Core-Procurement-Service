@@ -1,7 +1,7 @@
 import { request } from "./client";
 
 export interface User {
-    id: number;
+    user_id: number;
     username: string;
     role: string;
     first_name: string;
