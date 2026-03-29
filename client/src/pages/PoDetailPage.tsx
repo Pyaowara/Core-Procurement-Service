@@ -15,7 +15,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Download02Icon, Delete02Icon } from "@hugeicons/core-free-icons";
 import ConfirmModal from "@/components/ConfirmModal";
-import { toast } from "sonner";
+import { toast } from "react-hot-toast";
 
 export default function PoDetailPage() {
     const { id } = useParams<{ id: string }>();
@@ -28,7 +28,7 @@ export default function PoDetailPage() {
     const [isDeleting, setIsDeleting] = useState(false);
     const [receiveConfirmOpen, setReceiveConfirmOpen] = useState(false);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-    const canReceiveGoods = user && ["purchaseOfficer", "admin"].includes(user.role);
+    const canReceiveGoods = user && ["PurchaseOfficer", "Admin"].includes(user.role);
 
     const load = async () => {
         if (!id) {

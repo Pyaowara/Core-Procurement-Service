@@ -44,8 +44,6 @@ type PRItem struct {
 	DiscountUnit         string  `gorm:"type:varchar(10)"` // % or BAHT
 	TotalPrice           float64 `gorm:"type:decimal(15,2)"`
 	RequiredDate         time.Time
-	CurrentStockAtSubmit int       `gorm:"default:0"` // Stock snapshot at PR submission time
-	StockCheckAt         time.Time // When stock was checked
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
 }

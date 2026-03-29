@@ -60,30 +60,6 @@ type ApprovalRejectedEvent struct {
 	RejectedAt time.Time `json:"rejected_at"`
 }
 
-// POCreatedEvent is published when PO is created
-type POCreatedEvent struct {
-	POID       uint            `json:"po_id"`
-	PONumber   string          `json:"po_number"`
-	PRID       uint            `json:"pr_id"`
-	VendorID   uint            `json:"vendor_id"`
-	VendorName string          `json:"vendor_name"`
-	Purpose    string          `json:"purpose"`
-	Items      []POItemPayload `json:"items"`
-	DueDate    string          `json:"due_date"`
-	Timestamp  time.Time       `json:"timestamp"`
-}
-
-type POItemPayload struct {
-	SKU          string  `json:"sku"`
-	ItemName     string  `json:"item_name"`
-	Description  string  `json:"description"`
-	Quantity     int     `json:"quantity"`
-	PricePerUnit float64 `json:"price_per_unit"`
-	Discount     float64 `json:"discount"`
-	DiscountUnit string  `json:"discount_unit"`
-	TotalPrice   float64 `json:"total_price"`
-	RequiredDate string  `json:"required_date"`
-}
 
 // GoodsReceivedEvent is published when goods are received - includes items for inventory update
 type GoodsReceivedEvent struct {

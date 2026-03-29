@@ -25,6 +25,7 @@ export default function ProfilePage() {
     useEffect(() => {
         if (!user) return;
         authApi.me().then((data) => {
+            console.log(user,user.user_id)
             setFullUser(data);
             setForm({ first_name: data.first_name, last_name: data.last_name, email: data.email });
             setLoading(false);
@@ -38,7 +39,7 @@ export default function ProfilePage() {
         setMessage("");
         setSaving(true);
         try {
-            await userApi.updateUser(user.id, form);
+            await userApi.updateUser(user.user_id, form);
             setMessage("Profile updated successfully");
             refresh();
         } catch (err: unknown) {

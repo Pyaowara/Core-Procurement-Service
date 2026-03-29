@@ -45,16 +45,33 @@ func SubscribeToApprovalEvents() {
 
 	log.Println("Listening for approval events...")
 	for msg := range msgs {
-		// Try to unmarshal as ApprovalCompletedEvent first
-		var completedEvent messaging.ApprovalCompletedEvent
-		if err := json.Unmarshal(msg.Body, &completedEvent); err == nil && completedEvent.PRID != 0 {
-			handleApprovalCompleted(completedEvent)
-		} else {
-			// Try to unmarshal as ApprovalRejectedEvent
-			var rejectedEvent messaging.ApprovalRejectedEvent
-			if err := json.Unmarshal(msg.Body, &rejectedEvent); err == nil && rejectedEvent.PRID != 0 {
-				handleApprovalRejected(rejectedEvent)
+		switch msg.RoutingKey {
+		case messaging.EventApprovalCompleted:
+			var completedEvent messaging.ApprovalCompletedEvent
+			if err := json.Unmarshal(msg.Body, &completedEvent); err != nil {
+				log.Printf("failed to unmarshal approval completed event: %v", err)
+				continue
 			}
+			if completedEvent.PRID == 0 {
+				log.Printf("invalid approval completed event: missing pr_id")
+				continue
+			}
+			handleApprovalCompleted(completedEvent)
+
+		case messaging.EventApprovalRejected:
+			var rejectedEvent messaging.ApprovalRejectedEvent
+			if err := json.Unmarshal(msg.Body, &rejectedEvent); err != nil {
+				log.Printf("failed to unmarshal approval rejected event: %v", err)
+				continue
+			}
+			if rejectedEvent.PRID == 0 {
+				log.Printf("invalid approval rejected event: missing pr_id")
+				continue
+			}
+			handleApprovalRejected(rejectedEvent)
+
+		default:
+			log.Printf("ignoring unknown approval routing key: %s", msg.RoutingKey)
 		}
 	}
 }

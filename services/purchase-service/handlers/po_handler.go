@@ -18,25 +18,21 @@ import (
 type CreatePORequest struct {
 	PRID      uint           `json:"pr_id" binding:"required"`
 	VendorID  uint           `json:"vendor_id" binding:"required"`
-	POItems   []CreatePOItem `json:"po_items" binding:"required,gt=0"` // Select PR Items and set custom values
+	POItems   []CreatePOItem `json:"po_items" binding:"required,gt=0"`
 	CreditDay int            `json:"credit_day"`
 	DueDate   string         `json:"due_date" binding:"required"`
 }
 
 type CreatePOItem struct {
-	PRItemID     uint     `json:"pr_item_id" binding:"required"` // Which PR Item to use
-	SKU          string   `json:"sku"`                           // Required if PR Item SKU is empty
-	ItemName     string   `json:"item_name"`                     // Required if PR Item ItemName is empty
-	Description  string   `json:"description"`                   // Required if PR Item Description is empty
-	Quantity     *int     `json:"quantity"`                      // Optional: override from PR Item
-	PricePerUnit *float64 `json:"price_per_unit"`                // Optional: override from PR Item
-	Discount     *float64 `json:"discount"`                      // Optional: override from PR Item
-	DiscountUnit *string  `json:"discount_unit"`                 // Optional: override from PR Item
-	RequiredDate *string  `json:"required_date"`                 // Optional: override from PR Item
-}
-
-type ReceiveGoodsRequest struct {
-	// Empty - goods received based on PO item quantities automatically
+	PRItemID     uint     `json:"pr_item_id" binding:"required"` 
+	SKU          string   `json:"sku"`                           
+	ItemName     string   `json:"item_name"`                     
+	Description  string   `json:"description"`                   
+	Quantity     *int     `json:"quantity"`                      
+	PricePerUnit *float64 `json:"price_per_unit"`                
+	Discount     *float64 `json:"discount"`                      
+	DiscountUnit *string  `json:"discount_unit"`                 
+	RequiredDate *string  `json:"required_date"`                 
 }
 
 // CalculateTotalPrice calculates total price based on quantity, price per unit, and discount
@@ -49,11 +45,7 @@ func CalculateTotalPrice(quantity int, pricePerUnit float64, discount float64, d
 	return subtotal - discount
 }
 
-// ValidatePOItem validates that required fields are provided when PR Item values are empty
-// Also validates discount and total price calculations
-// Returns validation error if required fields are missing or invalid
 func ValidatePOItem(item CreatePOItem, prItem *models.PRItem, index int) error {
-	// Validate SKU - must be provided if PR Item SKU is empty
 	sku := item.SKU
 	if sku == "" {
 		sku = prItem.SKU
@@ -62,7 +54,6 @@ func ValidatePOItem(item CreatePOItem, prItem *models.PRItem, index int) error {
 		return fmt.Errorf("item %d: SKU cannot be empty (must provide in request if PR Item SKU is empty)", index+1)
 	}
 
-	// Validate ItemName - must be provided if PR Item ItemName is empty
 	itemName := item.ItemName
 	if itemName == "" {
 		itemName = prItem.ItemName
@@ -71,7 +62,6 @@ func ValidatePOItem(item CreatePOItem, prItem *models.PRItem, index int) error {
 		return fmt.Errorf("item %d: item_name cannot be empty (must provide in request if PR Item ItemName is empty)", index+1)
 	}
 
-	// Validate Description - must be provided if PR Item Description is empty
 	description := item.Description
 	if description == "" {
 		description = prItem.Description
@@ -101,7 +91,7 @@ func ValidatePOItem(item CreatePOItem, prItem *models.PRItem, index int) error {
 		discount = *item.Discount
 	}
 
-	// Validate quantity and price per unit are positive
+	// Validate quantity and price
 	if quantity <= 0 {
 		return fmt.Errorf("item %d: quantity must be greater than 0 (got: %d)", index+1, quantity)
 	}
@@ -110,12 +100,10 @@ func ValidatePOItem(item CreatePOItem, prItem *models.PRItem, index int) error {
 		return fmt.Errorf("item %d: price_per_unit must be greater than 0 (got: %.2f)", index+1, pricePerUnit)
 	}
 
-	// Validate discount is not negative
 	if discount < 0 {
 		return fmt.Errorf("item %d: discount cannot be negative (got: %.2f)", index+1, discount)
 	}
 
-	// Validate discount unit is valid (if provided)
 	if discountUnit != "" && discountUnit != "%" && discountUnit != "BAHT" {
 		return fmt.Errorf("item %d: discount_unit must be either '%%' or 'BAHT' (got: %s)", index+1, discountUnit)
 	}
@@ -147,7 +135,6 @@ func ValidatePOItem(item CreatePOItem, prItem *models.PRItem, index int) error {
 }
 
 // GeneratePO creates a Purchase Order from an approved PR with transaction support
-// If there are no valid items to create, the PO will not be created
 func GeneratePO(c *gin.Context) {
 	var req CreatePORequest
 	if err := c.ShouldBindJSON(&req); err != nil {

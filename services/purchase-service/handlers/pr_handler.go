@@ -20,18 +20,18 @@ import (
 type CreatePRRequest struct {
 	PRNumber   string                `json:"pr_number"`
 	Department string                `json:"department" binding:"required"`
-	Purpose    string                `json:"purpose" binding:"required"` // Purpose of the purchase request
+	Purpose    string                `json:"purpose" binding:"required"`
 	Items      []CreatePRItemRequest `json:"items" binding:"required"`
 }
 
 type CreatePRItemRequest struct {
-	SKU          string  `json:"sku"`                            // Stock Keeping Unit - optional
-	ItemName     string  `json:"item_name" binding:"required"`   // Item Name
-	Description  string  `json:"description" binding:"required"` // Item Description
+	SKU          string  `json:"sku"` // Stock Keeping Unit - optional
+	ItemName     string  `json:"item_name" binding:"required"`
+	Description  string  `json:"description" binding:"required"`
 	Quantity     int     `json:"quantity" binding:"required,gt=0"`
 	PricePerUnit float64 `json:"price_per_unit" binding:"required,gt=0"`
-	Discount     float64 `json:"discount" binding:"min=0"`         // Discount amount (0 or greater)
-	DiscountUnit string  `json:"discount_unit"`                    // Discount unit (e.g., percentage, fixed) - required only if discount > 0
+	Discount     float64 `json:"discount" binding:"min=0"`
+	DiscountUnit string  `json:"discount_unit"`                    // Discount unit (e.g., percentage, %) - required only if discount > 0
 	RequiredDate string  `json:"required_date" binding:"required"` // Required delivery date
 }
 
@@ -49,32 +49,24 @@ func GeneratePRNumber(prID uint) string {
 }
 
 // ValidatePRItemRequest validates all fields in a PR item request for empty/whitespace values
-// SKU is now optional - no validation required for SKU
-// Returns validation error if any field is invalid
 func ValidatePRItemRequest(item CreatePRItemRequest, index int) error {
-	// SKU is optional - no validation required
 
-	// Validate ItemName is not empty or whitespace
 	if strings.TrimSpace(item.ItemName) == "" {
 		return fmt.Errorf("item %d: item_name cannot be empty or whitespace", index+1)
 	}
 
-	// Validate Description is not empty or whitespace
 	if strings.TrimSpace(item.Description) == "" {
 		return fmt.Errorf("item %d: description cannot be empty or whitespace", index+1)
 	}
 
-	// Validate Quantity is greater than 0
 	if item.Quantity <= 0 {
 		return fmt.Errorf("item %d: quantity must be greater than 0", index+1)
 	}
 
-	// Validate PricePerUnit is greater than 0
 	if item.PricePerUnit <= 0 {
 		return fmt.Errorf("item %d: price_per_unit must be greater than 0", index+1)
 	}
 
-	// Validate Discount is not negative
 	if item.Discount < 0 {
 		return fmt.Errorf("item %d: discount cannot be negative", index+1)
 	}
@@ -94,10 +86,15 @@ func ValidatePRItemRequest(item CreatePRItemRequest, index int) error {
 		}
 
 		// If discount unit is BAHT, validate that discount doesn't exceed subtotal
-		if discountUnit == "BAHT" {
+		switch discountUnit {
+		case "BAHT":
 			subtotal := float64(item.Quantity) * item.PricePerUnit
 			if item.Discount > subtotal {
 				return fmt.Errorf("item %d: BAHT discount (%.2f) cannot exceed item subtotal (%.2f)", index+1, item.Discount, subtotal)
+			}
+		case "%":
+			if item.Discount > 100 {
+				return fmt.Errorf("item %d: percentage discount cannot exceed 100%% (got: %.2f%%)", index+1, item.Discount)
 			}
 		}
 	}
@@ -116,11 +113,6 @@ func ValidatePRItemRequest(item CreatePRItemRequest, index int) error {
 	return nil
 }
 
-// CheckAndCreatePRItems validates items without inventory checks - SKU is optional
-// Returns:
-// - items to create with data from request
-// - item validation details for response
-// - error if any items have invalid fields
 func CheckAndCreatePRItems(pr *models.PurchaseRequest, items []CreatePRItemRequest) ([]models.PRItem, map[string]interface{}, error) {
 	itemCheckDetails := make(map[string]interface{})
 	var prItemsToCreate []models.PRItem
@@ -187,8 +179,6 @@ func CheckAndCreatePRItems(pr *models.PurchaseRequest, items []CreatePRItemReque
 }
 
 // CreatePR creates a new Purchase Request in DRAFT status with transaction
-// No inventory validation - SKU is optional
-// Uses transaction to ensure PR and PR items are created together
 func CreatePR(c *gin.Context) {
 	var req CreatePRRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -197,9 +187,9 @@ func CreatePR(c *gin.Context) {
 	}
 
 	// Role-based access control: only employee, manager, and admin can create PRs
-	userRole, _ := c.Get("user_role")
+	userRole, exists := c.Get("role")
 	roleStr, ok := userRole.(string)
-	if !ok || (roleStr != "employee" && roleStr != "manager" && roleStr != "admin") {
+	if !exists || !ok || !strings.EqualFold(roleStr, "Employee") && !strings.EqualFold(roleStr, "Manager") && !strings.EqualFold(roleStr, "Admin") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Only employees, managers, and admins can create Purchase Requests"})
 		return
 	}
@@ -276,8 +266,6 @@ func CreatePR(c *gin.Context) {
 }
 
 // UpdatePR updates PR (only possible in DRAFT status) with transaction support
-// Fetches item details from inventory service by SKU
-// Uses transaction to ensure all updates succeed or all fail
 func UpdatePR(c *gin.Context) {
 	prID := c.Param("id")
 
@@ -384,9 +372,6 @@ func UpdatePR(c *gin.Context) {
 }
 
 // GetPR retrieves a PR by ID with role-based access control
-// Employee: only own PRs
-// Manager/PurchaseOfficer/Executive: non-DRAFT PRs
-// Admin: all PRs
 func GetPR(c *gin.Context) {
 	prID := c.Param("id")
 	userID, _ := c.Get("user_id")
@@ -423,9 +408,6 @@ func GetPR(c *gin.Context) {
 }
 
 // GetPRList retrieves PRs based on role-based access control
-// Employee: only own PRs
-// Manager/PurchaseOfficer/Executive: non-DRAFT PRs
-// Admin: all PRs
 func GetPRList(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	userRole, _ := c.Get("role")
@@ -464,10 +446,6 @@ func GetPRList(c *gin.Context) {
 }
 
 // SubmitPR submits PR for approval
-// Workflow:
-// 1. Validate Data: Check that items exist and have required fields
-// 2. Change Status: Update PR status from DRAFT to PENDING
-// 3. Trigger Approval: Generate workflow ID and publish PR_READY_FOR_APPROVAL event
 func SubmitPR(c *gin.Context) {
 	prID := c.Param("id")
 
