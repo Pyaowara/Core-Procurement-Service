@@ -16,11 +16,14 @@ export default function Layout() {
     if (!user) return <Navigate to="/login" replace />;
 
     return (
-        <div className="min-h-screen">
+        <div className="flex min-h-screen flex-col bg-background">
             <Navbar />
-            <main>
+            <main className="flex-1 pb-8">
                 <Outlet />
             </main>
+            <footer className="mt-auto bg-black py-4 text-center text-sm text-white/80 rounded-t-lg">
+                <p>&copy; {new Date().getFullYear()} Core Procurement Service. All rights reserved.</p>
+            </footer>
         </div>
     );
 }
