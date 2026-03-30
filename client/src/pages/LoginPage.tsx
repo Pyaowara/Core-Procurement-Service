@@ -10,6 +10,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import InteractiveGridBackground from "@/components/lightswind/interactive-grid-background";
 
 function redirectForRole(role: string) {
     if (role === "Admin") return "/admin";
@@ -39,50 +40,52 @@ export default function LoginPage() {
     };
 
     return (
-        <div className="flex min-h-screen items-center justify-center bg-muted/30">
-            <Card className="w-full max-w-sm shadow-sm">
-                <CardHeader className="text-center">
-                    <div className="mx-auto mb-2 flex h-12 w-full items-center justify-center text-primary text-lg font-bold">
-                        Core Procurement Service
-                    </div>
-                    <CardDescription>Sign in to your account</CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <form onSubmit={handleSubmit} className="grid gap-4">
-                        <div className="grid gap-2">
-                            <Label htmlFor="username">Username</Label>
-                            <Input
-                                id="username"
-                                placeholder="Enter your username"
-                                value={form.username}
-                                onChange={(e) => setForm({ ...form, username: e.target.value })}
-                                required
-                            />
+        <InteractiveGridBackground>
+            <div className="flex min-h-screen w-full items-center justify-center p-4">
+                <Card className="z-10 w-full max-w-sm shadow-sm bg-card/80 backdrop-blur-md">
+                    <CardHeader className="text-center">
+                        <div className="mx-auto mb-2 flex h-12 w-full items-center justify-center text-primary text-lg font-bold">
+                            Core Procurement Service
                         </div>
-                        <div className="grid gap-2">
-                            <Label htmlFor="password">Password</Label>
-                            <Input
-                                id="password"
-                                type="password"
-                                placeholder="Enter your password"
-                                value={form.password}
-                                onChange={(e) => setForm({ ...form, password: e.target.value })}
-                                required
-                            />
-                        </div>
-                        {error && <p className="text-sm text-destructive">{error}</p>}
-                        <Button type="submit" className="w-full" disabled={loading}>
-                            {loading ? "Signing in…" : "Sign In"}
-                        </Button>
-                        <p className="text-center text-sm text-muted-foreground">
-                            Don&apos;t have an account?{" "}
-                            <Link to="/register" className="font-medium text-primary underline underline-offset-4 hover:text-primary/80">
-                                Register
-                            </Link>
-                        </p>
-                    </form>
-                </CardContent>
-            </Card>
-        </div>
+                        <CardDescription>Sign in to your account</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <form onSubmit={handleSubmit} className="grid gap-4">
+                            <div className="grid gap-2">
+                                <Label htmlFor="username">Username</Label>
+                                <Input
+                                    id="username"
+                                    placeholder="Enter your username"
+                                    value={form.username}
+                                    onChange={(e) => setForm({ ...form, username: e.target.value })}
+                                    required
+                                />
+                            </div>
+                            <div className="grid gap-2">
+                                <Label htmlFor="password">Password</Label>
+                                <Input
+                                    id="password"
+                                    type="password"
+                                    placeholder="Enter your password"
+                                    value={form.password}
+                                    onChange={(e) => setForm({ ...form, password: e.target.value })}
+                                    required
+                                />
+                            </div>
+                            {error && <p className="text-sm text-destructive">{error}</p>}
+                            <Button type="submit" className="w-full" disabled={loading}>
+                                {loading ? "Signing in…" : "Sign In"}
+                            </Button>
+                            <p className="text-center text-sm text-muted-foreground">
+                                Don&apos;t have an account?{" "}
+                                <Link to="/register" className="font-medium text-primary underline underline-offset-4 hover:text-primary/80">
+                                    Register
+                                </Link>
+                            </p>
+                        </form>
+                    </CardContent>
+                </Card>
+            </div>
+        </InteractiveGridBackground>
     );
 }
