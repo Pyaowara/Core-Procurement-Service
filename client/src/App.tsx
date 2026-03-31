@@ -12,16 +12,14 @@ import PrDetailPage from "@/pages/PrDetailPage";
 import PoListPage from "@/pages/PolistPage";
 import PoDetailPage from "@/pages/PoDetailPage";
 import VendorPage from "@/pages/VendorPage";
+import DashboardPage from "./pages/DashboardPage";
 import RoleGuard from "@/components/RoleGuard";
 import { Toaster } from "react-hot-toast";
 function HomeRedirect() {
   const { user, loading } = useAuth();
   if (loading) return null;
   if (!user) return <Navigate to="/login" replace />;
-  if (user.role === "Admin") return <Navigate to="/admin" replace />;
-  if (user.role === "PurchaseOfficer")
-    return <Navigate to="/inventory" replace />;
-  return <Navigate to="/catalog" replace />;
+  return <Navigate to="/dashboard" replace />;
 }
 
 export default function App() {
@@ -34,6 +32,7 @@ export default function App() {
           <Route path="/register" element={<RegisterPage />} />
 
           <Route element={<Layout />}>
+            <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/catalog" element={<CatalogPage />} />
             <Route path="/pr" element={<PrListPage />} />
             <Route path="/pr/:id" element={<PrDetailPage />} />

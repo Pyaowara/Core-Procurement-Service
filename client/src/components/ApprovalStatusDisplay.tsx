@@ -48,14 +48,18 @@ export default function ApprovalStatusDisplay({
 
     // Map user roles to approval roles
     function verifyApprovalRole(userRole: string, requiredApprovalRole: string): boolean {
+        const normalizedRequiredRole = requiredApprovalRole.toLowerCase() === "executive"
+            ? "Executive"
+            : requiredApprovalRole;
+
         const roleMapping: Record<string, string[]> = {
             "Employee": ["Employee", "Manager", "PurchaseOfficer", "Executive", "Admin"],
             "Manager": ["Manager", "Executive", "Admin"],
             "PurchaseOfficer": ["PurchaseOfficer", "Executive", "Admin"],
-            "EXECUTIVE": ["Executive", "Admin"],
+            "Executive": ["Executive", "Admin"],
         };
 
-        const allowedRoles = roleMapping[requiredApprovalRole] || [];
+        const allowedRoles = roleMapping[normalizedRequiredRole] || [];
         return allowedRoles.includes(userRole);
     }
 
@@ -129,6 +133,7 @@ export default function ApprovalStatusDisplay({
             "Employee": "Employee",
             "Manager": "Department Manager",
             "PurchaseOfficer": "Purchase Officer",
+            "Executive": "Executive",
             "EXECUTIVE": "Executive",
         };
         return roleNames[role] || role;
