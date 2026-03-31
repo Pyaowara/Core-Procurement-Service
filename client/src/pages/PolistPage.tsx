@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { poApi, type PurchaseOrder } from "@/lib/api/po";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
     Table,
     TableBody,
@@ -18,6 +19,7 @@ export default function PoListPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [statusFilter, setStatusFilter] = useState<string>("ALL");
+    const [searchTerm, setSearchTerm] = useState<string>("");
 
     const load = async () => {
         setLoading(true);
@@ -60,11 +62,15 @@ export default function PoListPage() {
         }
     };
 
-    // Filter POs based on selected status
+    // Filter POs based on selected status and search term
     const filteredPos = (statusFilter === "ALL" 
         ? pos 
         : pos.filter(po => po.Status === statusFilter)
-    ).sort((a, b) => new Date(b.CreatedAt).getTime() - new Date(a.CreatedAt).getTime());
+    ).filter(po => {
+        const searchLower = searchTerm.toLowerCase();
+        return po.PONumber.toLowerCase().includes(searchLower) || 
+               po.Purpose.toLowerCase().includes(searchLower);
+    }).sort((a, b) => new Date(b.CreatedAt).getTime() - new Date(a.CreatedAt).getTime());
 
     const statusOptions = ["ALL", "SENT", "COMPLETED", "FAILED"];
 
@@ -72,25 +78,28 @@ export default function PoListPage() {
         <div className="mx-auto max-w-6xl p-6">
             <div className="mb-6 flex items-center justify-between">
                 <h1 className="text-2xl font-bold">Purchase Orders</h1>
-                <div className="flex gap-2">
-                    <Button onClick={load} disabled={loading}>
-                        {loading ? "Loading..." : "Refresh"}
-                    </Button>
-                </div>
             </div>
 
-            {/* Status Filter */}
-            <div className="mb-6 flex flex-wrap gap-2">
-                {statusOptions.map((status) => (
-                    <Button
-                        key={status}
-                        variant={statusFilter === status ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setStatusFilter(status)}
-                    >
-                        {status === "ALL" ? "All Status" : status}
-                    </Button>
-                ))}
+            {/* Search Box and Status Filter */}
+            <div className="mb-6 flex items-center justify-between gap-4">
+                <div className="flex flex-wrap gap-2">
+                    {statusOptions.map((status) => (
+                        <Button
+                            key={status}
+                            variant={statusFilter === status ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setStatusFilter(status)}
+                        >
+                            {status === "ALL" ? "All Status" : status}
+                        </Button>
+                    ))}
+                </div>
+                <Input
+                    placeholder="Search by PO Number or Purpose..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="max-w-xs"
+                />
             </div>
 
             {error && (
@@ -111,8 +120,8 @@ export default function PoListPage() {
                     <TableHeader>
                         <TableRow>
                             <TableHead>PO Number</TableHead>
-                            <TableHead>Vendor</TableHead>
                             <TableHead>Purpose</TableHead>
+                            <TableHead>Vendor</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead>Due Date</TableHead>
                             <TableHead>Created At</TableHead>
@@ -136,8 +145,8 @@ export default function PoListPage() {
                                         {po.PONumber}
                                         {po.IsDeleted && <span className="ml-2 text-sm text-destructive">(Deleted)</span>}
                                     </TableCell>
-                                    <TableCell>{po.Vendor?.Name || `Vendor #${po.VendorID}`}</TableCell>
                                     <TableCell>{po.Purpose}</TableCell>
+                                    <TableCell>{po.Vendor?.Name || `Vendor #${po.VendorID}`}</TableCell>
                                     <TableCell>
                                         <Badge 
                                             variant={getStatusColor(po.Status)}

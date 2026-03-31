@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { prApi, type PurchaseRequest } from "@/lib/api/pr";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
     Table,
     TableBody,
@@ -23,6 +24,7 @@ export default function PrListPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [statusFilter, setStatusFilter] = useState<string>("ALL");
+    const [searchTerm, setSearchTerm] = useState<string>("");
     const [prFormOpen, setPrFormOpen] = useState(false);
     const canCreatePR = user && ["Employee", "Manager", "Admin"].includes(user.role);
 
@@ -69,11 +71,15 @@ export default function PrListPage() {
         }
     };
 
-    // Filter PRs based on selected status and sort by UpdatedAt (newest first)
+    // Filter PRs based on selected status, search term and sort by UpdatedAt (newest first)
     const filteredPrs = (statusFilter === "ALL" 
         ? prs 
         : prs.filter(pr => pr.Status === statusFilter)
-    ).sort((a, b) => new Date(b.CreatedAt).getTime() - new Date(a.CreatedAt).getTime());
+    ).filter(pr => {
+        const searchLower = searchTerm.toLowerCase();
+        return pr.PRNumber.toLowerCase().includes(searchLower) || 
+               pr.Purpose.toLowerCase().includes(searchLower);
+    }).sort((a, b) => new Date(b.UpdatedAt).getTime() - new Date(a.UpdatedAt).getTime());
 
     const statusOptions = ["ALL", "DRAFT", "PENDING", "APPROVED", "REJECTED"];
 
@@ -88,24 +94,29 @@ export default function PrListPage() {
                             Create PR
                         </Button>
                     )}
-                    <Button onClick={load} disabled={loading}>
-                        {loading ? "Loading..." : "Refresh"}
-                    </Button>
                 </div>
             </div>
 
-            {/* Status Filter */}
-            <div className="mb-6 flex flex-wrap gap-2">
-                {statusOptions.map((status) => (
-                    <Button
-                        key={status}
-                        variant={statusFilter === status ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setStatusFilter(status)}
-                    >
-                        {status === "ALL" ? "All Status" : status}
-                    </Button>
-                ))}
+            {/* Search Box and Status Filter */}
+            <div className="mb-6 flex items-center justify-between gap-4">
+                <div className="flex flex-wrap gap-2">
+                    {statusOptions.map((status) => (
+                        <Button
+                            key={status}
+                            variant={statusFilter === status ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setStatusFilter(status)}
+                        >
+                            {status === "ALL" ? "All Status" : status}
+                        </Button>
+                    ))}
+                </div>
+                <Input
+                    placeholder="Search by PR Number or Purpose..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="max-w-xs"
+                />
             </div>
 
             {error && (
@@ -126,8 +137,8 @@ export default function PrListPage() {
                     <TableHeader>
                         <TableRow>
                             <TableHead>PR Number</TableHead>
-                            <TableHead>Department</TableHead>
                             <TableHead>Purpose</TableHead>
+                            <TableHead>Department</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead>Created At</TableHead>
                         </TableRow>
@@ -150,8 +161,8 @@ export default function PrListPage() {
                                         {pr.PRNumber}
                                         {pr.DeletedAt && <span className="ml-2 text-sm text-destructive">(Deleted)</span>}
                                     </TableCell>
-                                    <TableCell>{pr.Department}</TableCell>
                                     <TableCell>{pr.Purpose}</TableCell>
+                                    <TableCell>{pr.Department}</TableCell>
                                     <TableCell>
                                         <Badge 
                                             variant={getStatusColor(pr.Status)}
