@@ -61,9 +61,10 @@ export default function PoListPage() {
     };
 
     // Filter POs based on selected status
-    const filteredPos = statusFilter === "ALL" 
+    const filteredPos = (statusFilter === "ALL" 
         ? pos 
-        : pos.filter(po => po.Status === statusFilter);
+        : pos.filter(po => po.Status === statusFilter)
+    ).sort((a, b) => new Date(b.CreatedAt).getTime() - new Date(a.CreatedAt).getTime());
 
     const statusOptions = ["ALL", "SENT", "COMPLETED", "FAILED"];
 

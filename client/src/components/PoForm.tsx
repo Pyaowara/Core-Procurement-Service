@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useNavigate } from "react-router-dom"
 import {
     Dialog,
     DialogContent,
@@ -30,7 +31,7 @@ import {
 import { poApi } from "@/lib/api/po"
 import { vendorApi, type Vendor } from "@/lib/api/vendor"
 import { prApi, type PurchaseRequest } from "@/lib/api/pr"
-import { toast } from "sonner"
+import { toast } from "react-hot-toast"
 
 interface PoFormProps {
     open: boolean
@@ -57,6 +58,7 @@ export default function PoForm({
     onSuccess,
     prId,
 }: PoFormProps) {
+    const navigate = useNavigate()
     const [pr, setPr] = useState<PurchaseRequest | null>(null)
     const [vendors, setVendors] = useState<Vendor[]>([])
     const [loadingPr, setLoadingPr] = useState(false)
@@ -207,7 +209,7 @@ export default function PoForm({
 
         setSubmitting(true)
         try {
-            await poApi.createPurchaseOrder({
+            const response = await poApi.createPurchaseOrder({
                 pr_id: prId,
                 vendor_id: selectedVendor,
                 po_items: selectedItemsList.map(item => ({
@@ -226,6 +228,8 @@ export default function PoForm({
             toast.success("Purchase Order created successfully")
             onOpenChange(false)
             onSuccess?.()
+            // Redirect to PO detail page
+            navigate(`/po/${response.data.ID}`)
         } catch (err: unknown) {
             const errorMsg = err instanceof Error ? err.message : "Failed to create PO"
             setError(errorMsg)

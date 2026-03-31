@@ -69,10 +69,11 @@ export default function PrListPage() {
         }
     };
 
-    // Filter PRs based on selected status
-    const filteredPrs = statusFilter === "ALL" 
+    // Filter PRs based on selected status and sort by UpdatedAt (newest first)
+    const filteredPrs = (statusFilter === "ALL" 
         ? prs 
-        : prs.filter(pr => pr.Status === statusFilter);
+        : prs.filter(pr => pr.Status === statusFilter)
+    ).sort((a, b) => new Date(b.CreatedAt).getTime() - new Date(a.CreatedAt).getTime());
 
     const statusOptions = ["ALL", "DRAFT", "PENDING", "APPROVED", "REJECTED"];
 

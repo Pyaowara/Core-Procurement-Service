@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useNavigate } from "react-router-dom"
 import {
     Dialog,
     DialogContent,
@@ -16,7 +17,7 @@ import { Button } from "@/components/ui/button"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { Add01Icon} from "@hugeicons/core-free-icons"
 import { userApi, type PublicInventoryItem, prApi, type PurchaseRequest } from "@/lib/api"
-import { toast } from "sonner"
+import { toast } from "react-hot-toast"
 import PrItemCard from "@/components/PrItemCard"
 
 interface PRItemFormData {
@@ -51,6 +52,7 @@ export default function PrForm({
     mode,
     existingPr,
 }: PrFormProps) {
+    const navigate = useNavigate()
     const [inventoryItems, setInventoryItems] = useState<PublicInventoryItem[]>([])
     const [loadingInventory, setLoadingInventory] = useState(false)
     const [submitting, setSubmitting] = useState(false)
@@ -249,18 +251,21 @@ export default function PrForm({
             }
 
             if (mode === "create") {
-                await prApi.createPurchaseRequest(prData)
+                const response = await prApi.createPurchaseRequest(prData)
                 toast.success("Purchase Request created successfully")
+                onOpenChange(false)
+                onSuccess?.()
+                // Redirect to PR detail page
+                navigate(`/pr/${response.data.ID}`)
             } else {
                 // Edit mode - update existing PR
                 if (existingPr) {
                     await prApi.editPurchaseRequest(existingPr.ID, prData)
                     toast.success("Purchase Request updated successfully")
+                    onOpenChange(false)
+                    onSuccess?.()
                 }
             }
-
-            onOpenChange(false)
-            onSuccess?.()
         } catch (err) {
             const errorMsg =
                 err instanceof Error
