@@ -27,24 +27,21 @@ type DashboardApprovalItem = {
     approval: ApprovalInstance;
 };
 
-const rolePriority: Record<string, number> = {
-    Employee: 1,
-    Manager: 2,
-    PurchaseOfficer: 3,
-    Executive: 4,
-    Admin: 5,
-};
-
 function normalizeRole(role: string): string {
     const trimmed = role.trim();
-    if (trimmed.toUpperCase() === "EXECUTIVE") return "Executive";
+    const upper = trimmed.toUpperCase();
+    if (upper === "EXECUTIVE") return "Executive";
+    if (upper === "PURCHASEOFFICER") return "PurchaseOfficer";
+    if (upper === "MANAGER") return "Manager";
+    if (upper === "EMPLOYEE") return "Employee";
+    if (upper === "ADMIN") return "Admin";
     return trimmed;
 }
 
 function canUserApproveStep(userRole: string, stepRole: string): boolean {
-    const userLevel = rolePriority[normalizeRole(userRole)] ?? 0;
-    const requiredLevel = rolePriority[normalizeRole(stepRole)] ?? 0;
-    return userLevel >= requiredLevel;
+    const normalizedUserRole = normalizeRole(userRole);
+    const normalizedStepRole = normalizeRole(stepRole);
+    return normalizedUserRole === normalizedStepRole;
 }
 
 function formatDate(value: string): string {
