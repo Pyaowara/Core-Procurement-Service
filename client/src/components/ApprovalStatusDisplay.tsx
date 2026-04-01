@@ -42,21 +42,25 @@ export default function ApprovalStatusDisplay({
         (s) => s.StepOrder === approval.CurrentStep
     );
 
+    const normalizeRole = (role: string): string => {
+        const normalized = role.trim().toUpperCase();
+        if (normalized === "EXECUTIVE") return "Executive";
+        if (normalized === "ADMIN") return "Admin";
+        if (normalized === "MANAGER") return "Manager";
+        if (normalized === "PURCHASEOFFICER" || normalized === "PROCUREMENT") return "PurchaseOfficer";
+        if (normalized === "EMPLOYEE") return "Employee";
+        return role.trim();
+    };
+
     // Check if user can approve/reject (role must match current step's required role)
     const canApproveOrReject =
-        user && currentStep && verifyApprovalRole(user.role, currentStep.Role);
+        !!user && !!currentStep && verifyApprovalRole(user.role, currentStep.Role);
 
-    // Map user roles to approval roles
+    // Strict role matching: only the exact step role can approve/reject.
     function verifyApprovalRole(userRole: string, requiredApprovalRole: string): boolean {
-        const roleMapping: Record<string, string[]> = {
-            "Employee": ["Employee", "Manager", "PurchaseOfficer", "Executive", "Admin"],
-            "Manager": ["Manager", "Executive", "Admin"],
-            "PurchaseOfficer": ["PurchaseOfficer", "Executive", "Admin"],
-            "EXECUTIVE": ["Executive", "Admin"],
-        };
-
-        const allowedRoles = roleMapping[requiredApprovalRole] || [];
-        return allowedRoles.includes(userRole);
+        const normalizedUserRole = normalizeRole(userRole);
+        const normalizedRequiredRole = normalizeRole(requiredApprovalRole);
+        return normalizedUserRole === normalizedRequiredRole;
     }
 
     const getStepStatusIcon = (status: string) => {
@@ -129,6 +133,7 @@ export default function ApprovalStatusDisplay({
             "Employee": "Employee",
             "Manager": "Department Manager",
             "PurchaseOfficer": "Purchase Officer",
+            "Executive": "Executive",
             "EXECUTIVE": "Executive",
         };
         return roleNames[role] || role;

@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 const navItems = [
+    { to: "/dashboard", label: "Dashboard", roles: null },
     { to: "/catalog", label: "Catalog", roles: null },
     { to: "/pr", label: "Purchase Requests", roles: null },
     { to: "/po", label: "Purchase Orders", roles: ["PurchaseOfficer", "Admin"] },
@@ -53,7 +54,7 @@ export default function Navbar() {
                                     >
                                         {item.label}
                                         {isActive && (
-                                            <span className="absolute inset-x-1 -bottom-[13px] h-0.5 rounded-full bg-primary" />
+                                            <span className="absolute inset-x-1 -bottom-3.25 h-0.5 rounded-full bg-primary" />
                                         )}
                                     </button>
                                 </Link>

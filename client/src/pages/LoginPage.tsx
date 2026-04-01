@@ -12,10 +12,8 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import InteractiveGridBackground from "@/components/lightswind/interactive-grid-background";
 
-function redirectForRole(role: string) {
-    if (role === "Admin") return "/admin";
-    if (role === "PurchaseOfficer") return "/inventory";
-    return "/catalog";
+function redirectForRole() {
+    return "/dashboard";
 }
 
 export default function LoginPage() {
@@ -30,8 +28,8 @@ export default function LoginPage() {
         setError("");
         setLoading(true);
         try {
-            const me = await login(form);
-            navigate(redirectForRole(me.role));
+            await login(form);
+            navigate(redirectForRole());
         } catch (err: unknown) {
             setError(err instanceof Error ? err.message : "Login failed");
         } finally {
