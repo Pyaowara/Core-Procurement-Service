@@ -302,40 +302,6 @@ export default function DashboardPage() {
                     </div>
                 </CardContent>
             </Card>
-
-            <Card>
-                <CardHeader>
-                    <CardTitle>Quick Access</CardTitle>
-                    <CardDescription>
-                        Common actions based on your role.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent className="flex flex-wrap gap-2">
-                    <Button asChild variant="outline">
-                        <Link to="/pr">View Purchase Requests</Link>
-                    </Button>
-                    {(user?.role === "PurchaseOfficer" || user?.role === "Admin") && (
-                        <Button asChild variant="outline">
-                            <Link to="/po">View Purchase Orders</Link>
-                        </Button>
-                    )}
-                    {(user?.role === "PurchaseOfficer" || user?.role === "Admin") && (
-                        <Button asChild variant="outline">
-                            <Link to="/vendor">Vendor Management</Link>
-                        </Button>
-                    )}
-                    {user?.role === "PurchaseOfficer" && (
-                        <Button asChild variant="outline">
-                            <Link to="/inventory">Inventory</Link>
-                        </Button>
-                    )}
-                    {user?.role === "Admin" && (
-                        <Button asChild variant="outline">
-                            <Link to="/admin">User Administration</Link>
-                        </Button>
-                    )}
-                </CardContent>
-            </Card>
         </div>
     );
 }
